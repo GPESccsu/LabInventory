@@ -899,7 +899,7 @@ def export_project_forms(
     # 出库单：基于（可能刚覆盖后的）项目 BOM
     out_rows = conn.execute(
         """
-        SELECT p.name AS name, p.package AS package, p.unit AS unit
+        SELECT p.id, p.mpn, p.name, p.unit, b.req_qty
         FROM project_bom b
         JOIN projects pr ON pr.id = b.project_id
         JOIN parts p ON p.id = b.part_id
@@ -908,42 +908,22 @@ def export_project_forms(
         """,
         (project_code,),
     ).fetchall()
-    if not out_rows:
-        raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
-
-    outbound_csv.parent.mkdir(parents=True, exist_ok=True)
-    with outbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "领用人", "领用时间", "用途", "项目"])
-        for i, r in enumerate(out_rows, start=1):
-            w.writerow([i, now_str, r["name"], r["package"] or "", r["unit"] or "pcs", "", "", "", "", "", "", project_code])
+    outbound_records = [
+        {
+            "seq": int(r["id"]),
+            "name": r["mpn"],
+            "spec": r["name"],
+            "unit": r["unit"] or "pcs",
+            "qty": int(r["req_qty"]),
+            "price": 0.0,
+            "total": 0.0,
+            "mpn": r["mpn"],
+        }
+        for r in out_rows
+    ]
 
     # 未提供立创文件时，入库单回退为项目 BOM 需求数量
     if not lcsc_file:
-        rows = conn.execute(
-            """
-            SELECT p.id, p.mpn, p.name, p.unit, b.req_qty
-            FROM project_bom b
-            JOIN projects pr ON pr.id = b.project_id
-            JOIN parts p ON p.id = b.part_id
-            WHERE pr.code = ?
-            ORDER BY p.category, p.mpn
-            """,
-            (project_code,),
-        ).fetchall()
-        inbound_records = [
-            {
-                "seq": int(r["id"]),
-                "name": r["mpn"],
-                "spec": r["name"],
-                "unit": r["unit"] or "pcs",
-                "qty": int(r["req_qty"]),
-                "price": 0.0,
-                "total": 0.0,
-                "mpn": r["mpn"],
-            }
-            for r in rows
-        ]
         inbound_records = list(outbound_records)
 
     if not outbound_records:
