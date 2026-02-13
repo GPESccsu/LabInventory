@@ -120,6 +120,7 @@ def parse_qty(value: Any) -> float | None:
 
 
 def choose_column(row: pd.Series, candidates: list[str]) -> Any:
+    candidate_set = set(candidates)
     for col in candidates:
         if col in row.index:
             val = row[col]
@@ -127,6 +128,16 @@ def choose_column(row: pd.Series, candidates: list[str]) -> Any:
                 t = clean_text(val)
                 if t:
                     return t
+
+    # 兼容重复列名被 pandas 自动改写成 `.1`、`.2` 的情况
+    for col in row.index:
+        if base_col_name(str(col)) not in candidate_set:
+            continue
+        val = row[col]
+        if not pd.isna(val):
+            t = clean_text(val)
+            if t:
+                return t
     return None
 
 
@@ -186,33 +197,74 @@ def find_datasheet_pdf_url(session: requests.Session, page_url: str) -> str | No
         return None
 
     soup = BeautifulSoup(resp.text, "html.parser")
+    candidates: list[tuple[int, str]] = []
+    blocklist = ("iso_iec_doc", "isoiec", "certificate", "认证", "rohs", "reach")
+
+    def score_and_add(url: str, text: str = "") -> None:
+        if not url:
+            return
+        lower_full = url.lower()
+        if ".pdf" not in lower_full:
+            return
+        if any(x in lower_full for x in blocklist):
+            return
+
+        lower_text = (text or "").lower()
+        score = 0
+        if re.search(r"datasheet|data\s*sheet|数据手册|规格书|说明书|手册", lower_text, re.I):
+            score += 5
+        if re.search(r"datasheet|data\s*sheet|规格书|manual", lower_full, re.I):
+            score += 3
+        if lower_full.endswith('.pdf'):
+            score += 2
+        candidates.append((score, url))
+
     for a in soup.find_all("a", href=True):
         href = clean_text(a.get("href"))
         if not href:
             continue
-        text = clean_text(a.get_text(" ", strip=True)) or ""
         full = urljoin(page_url, href)
-        if "pdf" in full.lower() and re.search(r"datasheet|数据手册", text, re.I):
-            return full
-        if full.lower().endswith(".pdf"):
-            return full
-    return None
+        txt = clean_text(a.get_text(" ", strip=True)) or ""
+        score_and_add(full, txt)
+
+    # 页面脚本中有时直接包含 pdf 链接
+    raw = resp.text
+    for m in re.finditer(r'https?://[^\s"\']+\.pdf(?:\?[^\s"\']*)?', raw, flags=re.I):
+        score_and_add(m.group(0), "")
+
+    if not candidates:
+        return None
+
+    # 去重并按得分排序
+    dedup: dict[str, int] = {}
+    for score, url in candidates:
+        dedup[url] = max(score, dedup.get(url, -1))
+
+    best_url, best_score = max(dedup.items(), key=lambda item: item[1])
+    return best_url if best_score > 0 else None
 
 
 def safe_filename(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|\s]+', "_", name).strip("_")
 
 
-def download_pdf(session: requests.Session, pdf_url: str, target: Path) -> bool:
+def download_pdf(session: requests.Session, pdf_url: str, target: Path, referer: str | None = None) -> bool:
     target.parent.mkdir(parents=True, exist_ok=True)
+    headers = {"Referer": referer} if referer else {}
     try:
-        with session.get(pdf_url, timeout=30, stream=True) as resp:
+        with session.get(pdf_url, timeout=30, stream=True, headers=headers) as resp:
             resp.raise_for_status()
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            first_chunk = b""
             with target.open("wb") as f:
                 for chunk in resp.iter_content(chunk_size=1024 * 128):
-                    if chunk:
-                        f.write(chunk)
-        return target.exists() and target.stat().st_size > 0
+                    if not chunk:
+                        continue
+                    if not first_chunk:
+                        first_chunk = chunk[:8]
+                    f.write(chunk)
+            is_pdf = ("pdf" in content_type) or first_chunk.startswith(b"%PDF-")
+        return is_pdf and target.exists() and target.stat().st_size > 1024
     except Exception:
         return False
 
@@ -272,6 +324,10 @@ def main() -> int:
             log_line(log_fp, f"目标表: {table_name}; 唯一键: {unique_key}")
 
             session = requests.Session()
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+            })
             conn.execute("BEGIN")
 
             for idx, row in df.iterrows():
@@ -283,8 +339,9 @@ def main() -> int:
                     url = normalize_url(choose_column(row, ["商品链接"]))
                     category = choose_column(row, ["目录"])
                     package = choose_column(row, ["封装", "封装 Footprint", "Footprint 封装 Footprint"])
-                    params = choose_column(row, ["参数"])
-                    note = choose_column(row, ["Manufacturer", "品牌 Manufacturer", "品牌"])
+                    params = choose_column(row, ["参数", "参数.1"])
+                    note = choose_column(row, ["Manufacturer"])
+                    supplier_part = choose_column(row, ["Supplier Part"])
                     qty = parse_qty(choose_column(row, ["Quantity"]))
 
                     if qty is None:
@@ -305,9 +362,12 @@ def main() -> int:
                     if url:
                         pdf_url = find_datasheet_pdf_url(session, url)
                         if pdf_url:
-                            filename = safe_filename(f"{mpn}.pdf")
+                            if supplier_part:
+                                filename = safe_filename(f"{mpn}__{supplier_part}.pdf")
+                            else:
+                                filename = safe_filename(f"{mpn}.pdf")
                             pdf_path = datasheets_dir / filename
-                            if download_pdf(session, pdf_url, pdf_path):
+                            if download_pdf(session, pdf_url, pdf_path, referer=url):
                                 datasheet_local = str(pdf_path)
                             else:
                                 log_line(log_fp, f"[WARN] 行 {excel_line}: datasheet 下载失败 {pdf_url}")
@@ -320,8 +380,11 @@ def main() -> int:
                     ).fetchone()
 
                     if existed:
-                        update_fields = ["name=?", "url=?", "category=?", "package=?", "params=?", "note=?", "datasheet=?"]
-                        update_values = [name, url, category, package, params, note, datasheet_local]
+                        update_fields = ["name=?", "url=?", "category=?", "package=?", "params=?", "note=?"]
+                        update_values = [name, url, category, package, params, note]
+                        if datasheet_local:
+                            update_fields.append("datasheet=?")
+                            update_values.append(datasheet_local)
                         if "updated_at" in part_cols:
                             update_fields.append("updated_at=datetime('now','localtime')")
                         update_values.append(mpn)
