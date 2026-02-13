@@ -235,16 +235,23 @@ def safe_filename(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|\s]+', "_", name).strip("_")
 
 
-def download_pdf(session: requests.Session, pdf_url: str, target: Path) -> bool:
+def download_pdf(session: requests.Session, pdf_url: str, target: Path, referer: str | None = None) -> bool:
     target.parent.mkdir(parents=True, exist_ok=True)
+    headers = {"Referer": referer} if referer else {}
     try:
-        with session.get(pdf_url, timeout=30, stream=True) as resp:
+        with session.get(pdf_url, timeout=30, stream=True, headers=headers) as resp:
             resp.raise_for_status()
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            first_chunk = b""
             with target.open("wb") as f:
                 for chunk in resp.iter_content(chunk_size=1024 * 128):
-                    if chunk:
-                        f.write(chunk)
-        return target.exists() and target.stat().st_size > 0
+                    if not chunk:
+                        continue
+                    if not first_chunk:
+                        first_chunk = chunk[:8]
+                    f.write(chunk)
+            is_pdf = ("pdf" in content_type) or first_chunk.startswith(b"%PDF-")
+        return is_pdf and target.exists() and target.stat().st_size > 1024
     except Exception:
         return False
 
@@ -304,6 +311,10 @@ def main() -> int:
             log_line(log_fp, f"目标表: {table_name}; 唯一键: {unique_key}")
 
             session = requests.Session()
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+            })
             conn.execute("BEGIN")
 
             for idx, row in df.iterrows():
@@ -343,7 +354,7 @@ def main() -> int:
                             else:
                                 filename = safe_filename(f"{mpn}.pdf")
                             pdf_path = datasheets_dir / filename
-                            if download_pdf(session, pdf_url, pdf_path):
+                            if download_pdf(session, pdf_url, pdf_path, referer=url):
                                 datasheet_local = str(pdf_path)
                             else:
                                 log_line(log_fp, f"[WARN] 行 {excel_line}: datasheet 下载失败 {pdf_url}")
@@ -356,8 +367,11 @@ def main() -> int:
                     ).fetchone()
 
                     if existed:
-                        update_fields = ["name=?", "url=?", "category=?", "package=?", "params=?", "note=?", "datasheet=?"]
-                        update_values = [name, url, category, package, params, note, datasheet_local]
+                        update_fields = ["name=?", "url=?", "category=?", "package=?", "params=?", "note=?"]
+                        update_values = [name, url, category, package, params, note]
+                        if datasheet_local:
+                            update_fields.append("datasheet=?")
+                            update_values.append(datasheet_local)
                         if "updated_at" in part_cols:
                             update_fields.append("updated_at=datetime('now','localtime')")
                         update_values.append(mpn)
