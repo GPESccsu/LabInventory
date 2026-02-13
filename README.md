@@ -1,60 +1,99 @@
 # LabInventory
 
-这是一个基于 **Python + SQLite** 的实验室物料库存与项目备料管理工具。
+基于 **Python + SQLite** 的实验室物料库存与项目备料管理工具。
 
-## 重构后的目录结构
+## 目录结构
 
 ```text
 LabInventory/
-├── app/                    # 主应用代码
-│   └── inv.py              # 主 CLI（推荐入口）
-├── scripts/                # 辅助/一次性脚本
-│   ├── lcsc_to_db.py
-│   ├── import_bom.py
-│   ├── project_bom_allocation_example.py
-│   └── export_bom_parts_data.py
-├── docs/                   # 文档与命令示例
-│   └── 命令.txt
+├── app/                    # 主应用代码（CLI 核心）
+│   └── inv.py
+├── scripts/                # 辅助脚本
+│   ├── import_bom.py       # 将 BoM xlsx 导入 parts（可抓 datasheet）
+│   ├── lcsc_to_db.py       # 单个立创商品链接导入
+│   ├── export_bom_parts_data.py
+│   └── project_bom_allocation_example.py
+├── docs/
 ├── data/
-│   ├── db/                 # 数据库文件建议放置位置
-│   ├── raw/                # 原始导入文件建议放置位置
-│   └── reference/          # 参考数据（库位模板等）
-├── datasheets/             # 数据手册 PDF
-├── inv.py                  # 兼容入口（转发到 app/inv.py）
-└── lcsc_to_db.py           # 兼容入口（转发到 scripts/lcsc_to_db.py）
+├── inv.py                  # 根目录入口（推荐）
+└── lab_inventory.db
 ```
 
-## 入口说明
+## 运行入口
 
-- 推荐使用：`python inv.py ...`
-- 新路径也可用：`python app/inv.py ...`
-- 为兼容旧习惯保留了根目录 `inv.py` 与 `lcsc_to_db.py` 转发入口。
+- 推荐：`python inv.py ...`（可直接在仓库根目录运行）
+- 等价：`python app/inv.py ...`
 
-## 管理建议
+---
 
-1. 业务逻辑只放在 `app/`。
-2. 一次性脚本统一收敛到 `scripts/`。
-3. 命令示例、操作手册放在 `docs/`。
-4. 新增数据文件优先放 `data/` 下对应子目录，避免根目录继续堆积。
+## 一、初始化与基础操作
 
-## 脚本重命名说明
+### 1) 初始化库位
 
-- `scripts/script_name.py` → `scripts/export_bom_parts_data.py`（用于从 BOM Excel 提取并导出 `parts_data.txt`）。
-- `scripts/pro_exp.py` → `scripts/project_bom_allocation_example.py`（用于项目创建、BOM 添加与库存预留示例）。
+```bash
+python inv.py --db ./lab_inventory.db init-locations \
+  --room C409 --g01-shelves 3 --g02-shelves 1 --positions 10
+```
 
-## 项目出入库单自动填写（新增）
+### 2) 通过立创商品页导入单个器件（自动尝试下载 datasheet）
 
-当前 `inv.py` 已支持按项目自动生成出库/入库单（CSV）：
+```bash
+python inv.py --db ./lab_inventory.db lcsc \
+  --url "https://item.szlcsc.com/8143.html" \
+  --datasheets-dir ./datasheets
+```
 
-- 命令：`proj-forms`
-- 设计要点：
-  - 出库单基于项目 BOM 生成，**数量列默认留空**（后续人工填写）。
-  - 入库单优先读取立创导出文件（`csv/xlsx/xls`），不提供时回退为项目 BOM 需求数量。
-  - 可选将入库单数量直接写入库存（需指定库位）。
+### 3) 手动入库
 
-### 快速示例
+```bash
+python inv.py --db ./lab_inventory.db stock-in \
+  --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 20
+```
 
-仅生成单据：
+---
+
+## 二、项目流程（推荐）
+
+### 1) 创建项目
+
+```bash
+python inv.py --db ./lab_inventory.db proj-new \
+  --code PJ-001 --name "示例项目"
+```
+
+### 2) 手动维护项目 BOM（单条）
+
+```bash
+python inv.py --db ./lab_inventory.db bom-set \
+  --proj PJ-001 --mpn SN74LVC1G08DBVR --req 10 --priority 2
+```
+
+### 3) 预留 / 释放 / 消耗
+
+```bash
+# 预留
+python inv.py --db ./lab_inventory.db reserve \
+  --proj PJ-001 --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 5
+
+# 释放
+python inv.py --db ./lab_inventory.db release --id 1
+
+# 消耗（会同时扣减 stock）
+python inv.py --db ./lab_inventory.db consume --id 1
+```
+
+### 4) 查看项目状态
+
+```bash
+python inv.py --db ./lab_inventory.db proj-status --proj PJ-001
+python inv.py --db ./lab_inventory.db proj-alloc  --proj PJ-001
+```
+
+---
+
+## 三、`proj-forms`（按项目生成出/入库单）
+
+### A. 项目模式（你最常用）
 
 ```bash
 python inv.py --db ./lab_inventory.db proj-forms \
@@ -64,7 +103,14 @@ python inv.py --db ./lab_inventory.db proj-forms \
   --lcsc-file ./BoM报价-立创_20260212.xlsx
 ```
 
-生成并直接入库：
+当同时提供 `--proj` + `--lcsc-file` 时，会执行：
+
+1. 自动确保 `projects` 里存在该项目（不存在则创建）。
+2. 依据 xlsx 更新/写入 `parts`。
+3. **覆盖**该项目 `project_bom`（删除旧记录，再按 xlsx 重建）。
+4. 生成出库单/入库单 CSV。
+
+可选直接入库：
 
 ```bash
 python inv.py --db ./lab_inventory.db proj-forms \
@@ -75,12 +121,71 @@ python inv.py --db ./lab_inventory.db proj-forms \
   --apply-inbound --inbound-loc C409-G01-S01-P01
 ```
 
-### 推荐流程
+### B. 仅导入立创文件到 `parts + stock`
 
-1. 先按项目生成出库单（数量空白）。
-2. 人工填写本次实际出库数量。
-3. 再根据填写结果执行出库扣减。
-4. 到货后用立创数据生成入库单并验收。
-5. 通过 `--apply-inbound`（可选）将确认数量写入库存。
+```bash
+python inv.py --db ./lab_inventory.db proj-forms \
+  --lcsc-file ./BoM报价-立创_20260212.xlsx \
+  --inbound-loc LCSC-INBOX
+```
 
-详细说明见：`docs/项目出入库单自动填写说明.md`。
+---
+
+## 四、字段映射（当前实现）
+
+### 1) `parts` 表映射（xlsx -> parts）
+
+- `mpn` ← `Manufacturer Part` / `型号`
+- `name` ← `商品名称`
+- `category` ← `目录`（缺失时回退分类相关列）
+- `package` ← `封装`
+- `params` ← `参数`
+- `note` ← `Manufacturer`
+- `url` ← `商品链接`
+
+> 支持 pandas 自动重命名列（如 `Manufacturer.1`、`商品链接.1`、`参数.1`）。
+
+### 2) `PJ-001-入库单.csv` 映射
+
+- `序号` ← `parts.id`
+- `时间` ← 当天日期（`YYYY-MM-DD`）
+- `名称` ← `mpn`
+- `型号规格` ← `parts.name`
+- `单位` ← `parts.unit`
+- `数量` ← `购买数量`
+- `单价(元)` ← `单价(RMB)`
+- `总额(元)` ← `数量 × 单价(元)`
+
+---
+
+## 五、独立导入脚本（`scripts/import_bom.py`）
+
+用于将 BoM xlsx 直接导入 `parts`（支持 dry-run、日志、datasheet 下载）：
+
+```bash
+python scripts/import_bom.py \
+  --db ./lab_inventory.db \
+  --xlsx ./BoM报价-立创_20260212.xlsx \
+  --sheet 0 \
+  --log ./import_log.txt \
+  --datasheets-dir ./datasheets
+```
+
+只校验不提交：
+
+```bash
+python scripts/import_bom.py \
+  --db ./lab_inventory.db \
+  --xlsx ./BoM报价-立创_20260212.xlsx \
+  --dry-run
+```
+
+---
+
+## 六、建议流程
+
+1. `init-locations` 初始化库位。
+2. 用 `proj-forms --proj ... --lcsc-file ...` 导入项目并覆盖 `project_bom`。
+3. 生成 `出库单/入库单`，按实际流程领料和到货。
+4. 需要时 `--apply-inbound` 自动入库。
+5. 用 `proj-status / proj-alloc` 持续检查备料与预留状态。
