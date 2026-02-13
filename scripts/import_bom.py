@@ -1,123 +1,381 @@
-import pandas as pd
+#!/usr/bin/env python3
+"""将 BoM Excel 清洗后导入 SQLite parts 表（支持 upsert 与 dry-run）。"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
 import sqlite3
+import sys
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.parse import urljoin, urlparse
+
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-import re
-from pathlib import Path
 
-# 加载 Excel 数据
-file_path = 'G:/LabInventory/BoM报价-立创_20260212.xlsx'  # 修改为你的文件路径
-excel_data = pd.ExcelFile(file_path)
-df = pd.read_excel(excel_data, sheet_name='sheet', header=5)  # header=5 跳过前五行，表头从第六行开始
 
-# 连接数据库
-db_path = "G:/LabInventory/lab_inventory.db"  # 你自己的数据库路径
-conn = sqlite3.connect(db_path)
+EXPECTED_COLUMN_ALIASES = {
+    "ID": ["ID"],
+    "Name Manufacturer Part": ["Name Manufacturer Part", "Name"],
+    "Designator": ["Designator"],
+    "Footprint 封装 Footprint": ["Footprint 封装 Footprint"],
+    "Quantity": ["Quantity"],
+    "Manufacturer Part": ["Manufacturer Part", "型号 Manufacturer Part", "型号"],
+    "Manufacturer": ["Manufacturer", "品牌 Manufacturer", "品牌"],
+    "Supplier": ["Supplier"],
+    "Supplier Part": ["Supplier Part"],
+    "商品名称": ["商品名称", "商品名称.1", "商品名称.2"],
+    "参数": ["参数", "参数.1"],
+    "目录": ["目录", "目录.1"],
+    "商品链接": ["商品链接", "商品链接.1"],
+    "封装": ["封装", "封装 Footprint", "Footprint 封装 Footprint"],
+}
 
-def clean_text(s: str) -> str:
-    """ 清理字符串 """
-    if s is None:
-        return ""
-    return re.sub(r"\s+", " ", str(s)).strip()
+REQUIRED_IMPORT_COLUMNS = ["Manufacturer Part", "商品名称", "商品链接", "目录", "封装", "参数", "Manufacturer", "Quantity"]
 
-def download_pdf(session: requests.Session, pdf_url: str, out_path: Path) -> bool:
-    """ 下载 PDF 数据手册 """
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with session.get(pdf_url, stream=True, timeout=30) as r:
-        r.raise_for_status()
-        # 检查返回的内容类型
-        ctype = (r.headers.get("Content-Type") or "").lower()
-        if ("pdf" not in ctype) and ("octet-stream" not in ctype):
-            first = r.raw.read(5)
-            if first != b"%PDF-":
-                return False
-            with open(out_path, "wb") as f:
-                f.write(first)
-                for chunk in r.iter_content(chunk_size=1024 * 128):
-                    if chunk:
-                        f.write(chunk)
-            return True
-        with open(out_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 128):
-                if chunk:
-                    f.write(chunk)
-    return out_path.exists() and out_path.stat().st_size > 1024
 
-def find_datasheet_url(session: requests.Session, base_url: str) -> str:
-    """ 从网页中提取数据手册 PDF 链接 """
-    # 请求网页内容
-    response = session.get(base_url)
-    response.raise_for_status()  # 检查请求是否成功
-    soup = BeautifulSoup(response.text, 'html.parser')
+@dataclass
+class Stats:
+    total_rows: int = 0
+    inserted: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
 
-    # 查找含有“数据手册”或“Datasheet”字样的链接
-    for a in soup.find_all("a", href=True):
-        txt = clean_text(a.get_text(" ", strip=True))
-        href = a["href"]
-        full_url = urljoin(base_url, href)  # 处理相对链接
-        if re.search(r"(数据手册|Datasheet)", txt, re.I):
-            return full_url
-    return ""
 
-def get_part_id(conn, mpn):
-    """ 获取 parts 表中物料的 ID """
-    row = conn.execute("SELECT id FROM parts WHERE mpn=?", (mpn,)).fetchone()
-    if row:
-        return row[0]
+class ImportErrorFatal(Exception):
+    pass
+
+
+def resolve_input_path(raw_path: str, cwd: Path) -> Path:
+    """兼容 Windows 路径输入（如 G:/LabInventory/xxx）并映射到当前仓库。"""
+    candidate = Path(raw_path)
+    if candidate.exists():
+        return candidate
+
+    normalized = raw_path.replace('\\', '/')
+    mapped = Path(normalized)
+    if mapped.exists():
+        return mapped
+
+    m = re.match(r'^[A-Za-z]:/LabInventory/(.+)$', normalized)
+    if m:
+        local = cwd / m.group(1)
+        if local.exists():
+            return local
+
+    local_by_name = cwd / Path(normalized).name
+    if local_by_name.exists():
+        return local_by_name
+
+    return candidate
+
+
+def resolve_output_dir(raw_path: str, cwd: Path) -> Path:
+    candidate = Path(raw_path)
+    if os.name == 'nt':
+        return candidate
+
+    normalized = raw_path.replace('\\', '/')
+    m = re.match(r'^[A-Za-z]:/LabInventory/(.+)$', normalized)
+    if m:
+        return cwd / m.group(1)
+    return Path(normalized)
+
+
+def parse_sheet_arg(sheet_arg: str):
+    sheet_text = str(sheet_arg).strip()
+    return int(sheet_text) if sheet_text.isdigit() else sheet_text
+
+def clean_text(value: Any) -> str | None:
+    if value is None or pd.isna(value):
+        return None
+    s = re.sub(r"\s+", " ", str(value)).strip()
+    return s or None
+
+
+def normalize_url(url: str | None) -> str | None:
+    url = clean_text(url)
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if not parsed.scheme:
+        return f"https://{url}"
+    return url
+
+
+def parse_qty(value: Any) -> float | None:
+    value = clean_text(value)
+    if value is None:
+        return None
+    try:
+        return float(value.replace(",", ""))
+    except ValueError as exc:
+        raise ValueError(f"Quantity 不是有效数字: {value}") from exc
+
+
+def choose_column(row: pd.Series, candidates: list[str]) -> Any:
+    for col in candidates:
+        if col in row.index:
+            val = row[col]
+            if not pd.isna(val):
+                t = clean_text(val)
+                if t:
+                    return t
     return None
 
-# 遍历每行 Excel 表格数据
-session = requests.Session()
-datasheets_dir = Path("G:/LabInventory/datasheets/")  # 数据手册保存目录
 
-for index, row in df.iterrows():
-    mpn = row["Manufacturer Part"]
-    name = row["商品名称"]
-    category = row["目录"]
-    package = row["封装"]
-    params = row["参数"]
-    manufacturer = row["Manufacturer"]
-    qty = row["Quantity"]
-    note = manufacturer  # 将 Manufacturer 放入 note 字段
+def base_col_name(col: str) -> str:
+    return re.sub(r"\.\d+$", "", col)
 
-    # 获取物料 ID（如果物料已经存在则跳过，否则插入）
-    part_id = get_part_id(conn, mpn)
-    if not part_id:
-        # 插入新的物料记录到 parts 表
-        conn.execute(
-            "INSERT INTO parts (mpn, name, category, package, params, note, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'))",
-            (mpn, name, category, package, params, note)
-        )
-        part_id = get_part_id(conn, mpn)  # 获取新插入的 ID
 
-    # 获取商品链接并下载数据手册
-    datasheet_url = row["商品链接"]
-    datasheet_local = ""
-    if datasheet_url:
-        pdf_url = find_datasheet_url(session, datasheet_url)
-        if pdf_url:
-            datasheet_local = f"{datasheets_dir}/{mpn}.pdf"
-            if download_pdf(session, pdf_url, Path(datasheet_local)):
-                print(f"下载成功：{pdf_url}")
-            else:
-                print(f"数据手册下载失败：{pdf_url}")
-    
-   # 插入库存记录时，确保唯一
-    location = "C409-G01-S01-P01"  # 手动填写库位
-    conn.execute(
-        """
-        INSERT OR REPLACE INTO stock (part_id, location, qty, condition, updated_at)
-        VALUES (?, ?, ?, ?, datetime('now','localtime'))
-        """,
-        (part_id, location, qty, "new")
+def validate_headers(columns: list[str]) -> None:
+    base_counts = Counter(base_col_name(c) for c in columns)
+    missing = []
+    for logical_name, aliases in EXPECTED_COLUMN_ALIASES.items():
+        if not any(alias in base_counts for alias in aliases):
+            missing.append(f"{logical_name} (可接受列名: {', '.join(aliases)})")
+
+    if missing:
+        raise ImportErrorFatal("Excel 列校验失败，存在缺失列：\n- " + "\n- ".join(missing))
+
+    missing_required = [x for x in REQUIRED_IMPORT_COLUMNS if x not in base_counts]
+    if missing_required:
+        raise ImportErrorFatal("导入关键列缺失：" + ", ".join(missing_required))
+
+
+def get_parts_table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    if not rows:
+        raise ImportErrorFatal(f"数据库中不存在表 `{table_name}`。")
+    return {r[1] for r in rows}
+
+
+def detect_unique_key(conn: sqlite3.Connection, table_name: str, cols: set[str]) -> str:
+    if "part_number" in cols:
+        return "part_number"
+    if "mpn" in cols:
+        return "mpn"
+
+    # 兜底：从唯一索引中找单列索引
+    idx_list = conn.execute(f"PRAGMA index_list({table_name})").fetchall()
+    for idx in idx_list:
+        idx_name = idx[1]
+        is_unique = idx[2]
+        if not is_unique:
+            continue
+        idx_cols = conn.execute(f"PRAGMA index_info({idx_name})").fetchall()
+        if len(idx_cols) == 1:
+            return idx_cols[0][2]
+
+    raise ImportErrorFatal(
+        f"无法识别 `{table_name}` 的唯一键（期望包含 part_number 或 mpn）。"
     )
 
 
-# 提交更改
-conn.commit()
+def find_datasheet_pdf_url(session: requests.Session, page_url: str) -> str | None:
+    try:
+        resp = session.get(page_url, timeout=20)
+        resp.raise_for_status()
+    except Exception:
+        return None
 
-# 关闭数据库连接
-conn.close()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = clean_text(a.get("href"))
+        if not href:
+            continue
+        text = clean_text(a.get_text(" ", strip=True)) or ""
+        full = urljoin(page_url, href)
+        if "pdf" in full.lower() and re.search(r"datasheet|数据手册", text, re.I):
+            return full
+        if full.lower().endswith(".pdf"):
+            return full
+    return None
 
-print("数据处理完成！")
+
+def safe_filename(name: str) -> str:
+    return re.sub(r'[\\/:*?"<>|\s]+', "_", name).strip("_")
+
+
+def download_pdf(session: requests.Session, pdf_url: str, target: Path) -> bool:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with session.get(pdf_url, timeout=30, stream=True) as resp:
+            resp.raise_for_status()
+            with target.open("wb") as f:
+                for chunk in resp.iter_content(chunk_size=1024 * 128):
+                    if chunk:
+                        f.write(chunk)
+        return target.exists() and target.stat().st_size > 0
+    except Exception:
+        return False
+
+
+def log_line(log_fp, msg: str) -> None:
+    log_fp.write(msg + "\n")
+    log_fp.flush()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="导入 BoM 到 lab_inventory.db")
+    parser.add_argument("--db", required=True, help="SQLite 数据库路径")
+    parser.add_argument("--xlsx", required=True, help="BoM xlsx 路径")
+    parser.add_argument("--sheet", default=0, help="sheet 名称或索引（默认第一个）")
+    parser.add_argument("--dry-run", action="store_true", help="仅校验与预演，不提交")
+    parser.add_argument("--log", default="./import_log.txt", help="日志输出文件路径")
+    parser.add_argument(
+        "--datasheets-dir",
+        default="G:/LabInventory/datasheets",
+        help="datasheet PDF 保存目录",
+    )
+    args = parser.parse_args()
+
+    cwd = Path.cwd()
+    db_path = resolve_input_path(args.db, cwd)
+    xlsx_path = resolve_input_path(args.xlsx, cwd)
+    log_path = Path(args.log)
+    datasheets_dir = resolve_output_dir(args.datasheets_dir, cwd)
+
+    stats = Stats()
+
+    with log_path.open("w", encoding="utf-8") as log_fp:
+        log_line(log_fp, "=== BoM 导入日志 ===")
+        log_line(log_fp, f"DB: {db_path}")
+        log_line(log_fp, f"XLSX: {xlsx_path}")
+        if args.db != str(db_path) or args.xlsx != str(xlsx_path):
+            log_line(log_fp, f"路径映射: db={args.db} -> {db_path}; xlsx={args.xlsx} -> {xlsx_path}")
+        log_line(log_fp, f"Sheet: {args.sheet}")
+        log_line(log_fp, f"Dry-run: {args.dry_run}")
+
+        if not db_path.exists():
+            raise ImportErrorFatal(f"数据库文件不存在: {db_path}")
+        if not xlsx_path.exists():
+            raise ImportErrorFatal(f"Excel 文件不存在: {xlsx_path}")
+
+        sheet_name = parse_sheet_arg(args.sheet)
+        df = pd.read_excel(xlsx_path, sheet_name=sheet_name, header=5, dtype=object)
+        validate_headers(df.columns.tolist())
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+
+        try:
+            table_name = "parts"
+            part_cols = get_parts_table_columns(conn, table_name)
+            unique_key = detect_unique_key(conn, table_name, part_cols)
+            log_line(log_fp, f"目标表: {table_name}; 唯一键: {unique_key}")
+
+            session = requests.Session()
+            conn.execute("BEGIN")
+
+            for idx, row in df.iterrows():
+                stats.total_rows += 1
+                excel_line = idx + 7  # excel 可见行号（header=6）
+                try:
+                    mpn = choose_column(row, ["Manufacturer Part", "型号 Manufacturer Part", "型号"])
+                    name = choose_column(row, ["商品名称", "Name"])
+                    url = normalize_url(choose_column(row, ["商品链接"]))
+                    category = choose_column(row, ["目录"])
+                    package = choose_column(row, ["封装", "封装 Footprint", "Footprint 封装 Footprint"])
+                    params = choose_column(row, ["参数"])
+                    note = choose_column(row, ["Manufacturer", "品牌 Manufacturer", "品牌"])
+                    qty = parse_qty(choose_column(row, ["Quantity"]))
+
+                    if qty is None:
+                        stats.skipped += 1
+                        log_line(log_fp, f"[SKIP] 行 {excel_line}: Quantity 为空或无效")
+                        continue
+
+                    if not mpn:
+                        stats.skipped += 1
+                        log_line(log_fp, f"[SKIP] 行 {excel_line}: Manufacturer Part 为空")
+                        continue
+                    if not name or not category:
+                        stats.skipped += 1
+                        log_line(log_fp, f"[SKIP] 行 {excel_line}: 商品名称或目录为空, mpn={mpn}")
+                        continue
+
+                    datasheet_local = None
+                    if url:
+                        pdf_url = find_datasheet_pdf_url(session, url)
+                        if pdf_url:
+                            filename = safe_filename(f"{mpn}.pdf")
+                            pdf_path = datasheets_dir / filename
+                            if download_pdf(session, pdf_url, pdf_path):
+                                datasheet_local = str(pdf_path)
+                            else:
+                                log_line(log_fp, f"[WARN] 行 {excel_line}: datasheet 下载失败 {pdf_url}")
+                        else:
+                            log_line(log_fp, f"[WARN] 行 {excel_line}: 未找到 datasheet 链接")
+
+                    existed = conn.execute(
+                        f"SELECT id, created_at FROM {table_name} WHERE {unique_key}=?",
+                        (mpn,),
+                    ).fetchone()
+
+                    if existed:
+                        update_fields = ["name=?", "url=?", "category=?", "package=?", "params=?", "note=?", "datasheet=?"]
+                        update_values = [name, url, category, package, params, note, datasheet_local]
+                        if "updated_at" in part_cols:
+                            update_fields.append("updated_at=datetime('now','localtime')")
+                        update_values.append(mpn)
+                        conn.execute(
+                            f"UPDATE {table_name} SET {', '.join(update_fields)} WHERE {unique_key}=?",
+                            update_values,
+                        )
+                        stats.updated += 1
+                    else:
+                        insert_cols = [unique_key, "name", "url", "category", "package", "params", "note", "datasheet"]
+                        insert_values = [mpn, name, url, category, package, params, note, datasheet_local]
+                        ph = ",".join(["?"] * len(insert_cols))
+                        conn.execute(
+                            f"INSERT INTO {table_name} ({','.join(insert_cols)}) VALUES ({ph})",
+                            insert_values,
+                        )
+                        stats.inserted += 1
+
+                except Exception as row_exc:
+                    stats.failed += 1
+                    log_line(log_fp, f"[ERROR] 行 {excel_line}: {row_exc}")
+
+            if args.dry_run:
+                conn.rollback()
+                log_line(log_fp, "[INFO] dry-run 已回滚，未写入数据库。")
+            else:
+                conn.commit()
+                log_line(log_fp, "[INFO] 已提交事务。")
+
+        except Exception as fatal:
+            conn.rollback()
+            log_line(log_fp, f"[FATAL] {fatal}")
+            raise
+        finally:
+            conn.close()
+
+        summary = (
+            f"总行数={stats.total_rows}, 插入={stats.inserted}, 更新={stats.updated}, "
+            f"跳过={stats.skipped}, 失败={stats.failed}"
+        )
+        log_line(log_fp, "=== 统计 ===")
+        log_line(log_fp, summary)
+
+    print("导入完成：" + summary)
+    print("SQL 检查语句：")
+    print("1) SELECT COUNT(*) AS parts_count FROM parts;")
+    print("2) SELECT mpn, name, url FROM parts WHERE mpn = 'SN74LVC1G08DBVR';")
+    print(f"日志文件：{log_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except ImportErrorFatal as exc:
+        print(f"导入失败：{exc}", file=sys.stderr)
+        raise SystemExit(2)
