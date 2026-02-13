@@ -944,6 +944,27 @@ def export_project_forms(
             }
             for r in rows
         ]
+        inbound_records = list(outbound_records)
+
+    if not outbound_records:
+        raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
+
+    outbound_csv.parent.mkdir(parents=True, exist_ok=True)
+    with outbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "项目"])
+        for r in outbound_records:
+            w.writerow([
+                r["seq"],
+                now_str,
+                r["name"],
+                r["spec"],
+                r["unit"],
+                r["qty"],
+                f"{r['price']:.4f}" if r["price"] else "",
+                f"{r['total']:.4f}" if r["total"] else "",
+                project_code,
+            ])
 
     inbound_csv.parent.mkdir(parents=True, exist_ok=True)
     with inbound_csv.open("w", encoding="utf-8-sig", newline="") as f:

@@ -145,10 +145,10 @@ python inv.py --db ./lab_inventory.db proj-forms \
 
 > 支持 pandas 自动重命名列（如 `Manufacturer.1`、`商品链接.1`、`参数.1`）。
 
-### 2) `PJ-001-入库单.csv` 映射
+### 2) `PJ-001-入库单.csv` / `PJ-001-出库单.csv` 映射
 
 - `序号` ← `parts.id`
-- `时间` ← 当天日期（`YYYY-MM-DD`）
+- `时间` ← 当天日期（`YYYY.MM.DD`）
 - `名称` ← `mpn`
 - `型号规格` ← `parts.name`
 - `单位` ← `parts.unit`
