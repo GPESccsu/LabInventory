@@ -1,7 +1,9 @@
 import argparse
+import csv
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -694,6 +696,202 @@ def init_locations(conn, room: str, cabinets: list, positions_per_shelf: int = 1
                     )
                 total += 1
     return total
+
+
+def _pick_first(d: dict, names: list[str], default=""):
+    for n in names:
+        # 精确列名
+        if n in d and clean_text(d.get(n)):
+            return clean_text(d.get(n))
+        # 兼容 pandas 对重复列名的后缀（如 Quantity.1）
+        for k, v in d.items():
+            if str(k).startswith(f"{n}.") and clean_text(v):
+                return clean_text(v)
+    return default
+
+
+def _to_float(v, default=0.0) -> float:
+    s = clean_text(v)
+    if not s:
+        return default
+    s = s.replace(",", "")
+    m = re.search(r"-?\d+(?:\.\d+)?", s)
+    return float(m.group(0)) if m else default
+
+
+def _to_int(v, default=0) -> int:
+    return int(round(_to_float(v, float(default))))
+
+
+def _load_lcsc_rows(path: Path) -> list[dict]:
+    ext = path.suffix.lower()
+    if ext == ".csv":
+        with path.open("r", encoding="utf-8-sig", newline="") as f:
+            return list(csv.DictReader(f))
+    if ext in {".xlsx", ".xls"}:
+        try:
+            import pandas as pd
+        except Exception as e:
+            raise RuntimeError("读取 Excel 需要 pandas，请先安装 pandas") from e
+        df = pd.read_excel(path)
+        return [
+            {str(k): ("" if pd.isna(v) else str(v)) for k, v in row.items()}
+            for row in df.to_dict(orient="records")
+        ]
+    raise RuntimeError("立创导出文件仅支持 .csv/.xlsx/.xls")
+
+
+def export_project_forms(
+    conn,
+    project_code: str,
+    outbound_csv: Path,
+    inbound_csv: Path,
+    lcsc_file: Path | None = None,
+    inbound_location: str = "",
+    apply_inbound: bool = False,
+):
+    proj = conn.execute("SELECT id, code, name FROM projects WHERE code=?", (project_code,)).fetchone()
+    if proj is None:
+        raise RuntimeError(f"项目不存在：{project_code}。请先执行 proj-new 或确认 --proj 参数。")
+
+    bom_rows = conn.execute(
+        """
+        SELECT p.mpn, p.name AS name, p.package AS package, p.unit AS unit, b.req_qty
+        FROM project_bom b
+        JOIN parts p ON p.id = b.part_id
+        WHERE b.project_id = ?
+        ORDER BY p.category, p.mpn
+        """,
+        (int(proj["id"]),),
+    ).fetchall()
+
+    # 出库单：优先用 BOM；若 BOM 为空则回退为项目预留记录（按型号合并）
+    out_rows = bom_rows
+    if not out_rows:
+        out_rows = conn.execute(
+            """
+            SELECT p.mpn, p.name AS name, p.package AS package, p.unit AS unit,
+                   SUM(CASE WHEN a.alloc_qty > 0 THEN a.alloc_qty ELSE 0 END) AS req_qty
+            FROM project_alloc a
+            JOIN parts p ON p.id = a.part_id
+            WHERE a.project_id = ?
+              AND a.status IN ('reserved','consumed')
+            GROUP BY p.id, p.mpn, p.name, p.package, p.unit
+            ORDER BY p.category, p.mpn
+            """,
+            (int(proj["id"]),),
+        ).fetchall()
+
+    if not out_rows:
+        raise RuntimeError(
+            f"项目 {project_code} 没有 BOM，也没有预留记录，无法生成单据。"
+            "请先执行 bom-set 或 reserve。"
+        )
+
+    now_str = datetime.now().strftime("%Y-%m-%d")
+    outbound_csv.parent.mkdir(parents=True, exist_ok=True)
+    with outbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "领用人", "领用时间", "用途", "项目"])
+        for i, r in enumerate(out_rows, start=1):
+            w.writerow([
+                i,
+                now_str,
+                r["name"],
+                r["package"] or r["mpn"] or "",
+                r["unit"] or "pcs",
+                "",  # 按需求：数量留空人工填写
+                "",
+                "",
+                "",
+                "",
+                "",
+                project_code,
+            ])
+
+    # 入库单：优先使用立创导出数据；若未提供则回退 BOM（再回退预留数量）
+    inbound_records = []
+    if lcsc_file:
+        raw_rows = _load_lcsc_rows(lcsc_file)
+        for row in raw_rows:
+            mpn = _pick_first(row, ["型号", "Manufacturer Part", "MPN", "mpn"])
+            name = _pick_first(row, ["商品名称", "Name", "名称"], default=mpn)
+            if not (mpn or name):
+                continue
+            # 优先读取 Quantity（你反馈的立创表头）
+            qty = _to_int(_pick_first(row, ["Quantity", "购买数量", "数量", "qty"], default="0"), 0)
+            price = _to_float(_pick_first(row, ["单价(RMB)", "单价", "price"], default="0"), 0.0)
+            total = _to_float(_pick_first(row, ["小计(RMB)", "总价", "total"], default="0"), 0.0)
+            if total <= 0 and qty > 0 and price > 0:
+                total = qty * price
+            inbound_records.append(
+                {
+                    "mpn": mpn,
+                    "name": name,
+                    "package": _pick_first(row, ["封装", "Footprint 封装", "Footprint", "package"]),
+                    "unit": "pcs",
+                    "qty": qty,
+                    "price": price,
+                    "total": total,
+                }
+            )
+    else:
+        source_rows = bom_rows if bom_rows else out_rows
+        inbound_records = [
+            {
+                "mpn": r["mpn"],
+                "name": r["name"],
+                "package": r["package"] or "",
+                "unit": r["unit"] or "pcs",
+                "qty": int(r["req_qty"]),
+                "price": 0.0,
+                "total": 0.0,
+            }
+            for r in source_rows
+        ]
+
+    inbound_csv.parent.mkdir(parents=True, exist_ok=True)
+    with inbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "项目"])
+        for i, r in enumerate(inbound_records, start=1):
+            w.writerow([
+                i,
+                now_str,
+                r["name"],
+                r["package"] or r["mpn"],
+                r["unit"],
+                r["qty"],
+                f"{r['price']:.4f}" if r["price"] else "",
+                f"{r['total']:.4f}" if r["total"] else "",
+                project_code,
+            ])
+
+    # 规则：提供 lcsc_file 时默认执行入库写库（可通过 --no-auto-inbound 关闭）
+    if apply_inbound:
+        if not inbound_location:
+            loc_row = conn.execute("SELECT location FROM locations ORDER BY location LIMIT 1").fetchone()
+            if loc_row is None:
+                inbound_location = "AUTO-INBOUND"
+                conn.execute("INSERT OR IGNORE INTO locations (location, note) VALUES (?, ?)", (inbound_location, "自动创建入库库位"))
+            else:
+                inbound_location = clean_text(loc_row["location"])
+        for r in inbound_records:
+            if r["qty"] <= 0:
+                continue
+            row = conn.execute("SELECT id FROM parts WHERE mpn=?", (r["mpn"],)).fetchone()
+            if row is None:
+                upsert_part(
+                    conn,
+                    mpn=r["mpn"],
+                    name=r["name"] or r["mpn"],
+                    category="立创导入",
+                    package=r["package"],
+                    params="",
+                    datasheet="",
+                    note=f"project={project_code}",
+                )
+            add_stock(conn, r["mpn"], inbound_location, int(r["qty"]), "new", f"project={project_code} lcsc入库")
 # ---------------------------
 # CLI
 # ---------------------------
@@ -764,6 +962,16 @@ def main():
     # show alloc
     p = sub.add_parser("proj-alloc", help="查看项目预留明细（带库位）")
     p.add_argument("--proj", required=True)
+
+    # project forms
+    p = sub.add_parser("proj-forms", help="按项目生成出库/入库单 CSV；出库数量留空人工填写")
+    p.add_argument("--proj", required=True, help="项目 code")
+    p.add_argument("--outbound-csv", required=True, help="导出的出库单 CSV 路径")
+    p.add_argument("--inbound-csv", required=True, help="导出的入库单 CSV 路径")
+    p.add_argument("--lcsc-file", default="", help="立创导出文件（csv/xlsx/xls），用于填充入库单")
+    p.add_argument("--apply-inbound", action="store_true", help="将入库单数量写入库存（兼容旧参数）")
+    p.add_argument("--no-auto-inbound", action="store_true", help="即使提供 --lcsc-file 也不自动写入库存")
+    p.add_argument("--inbound-loc", default="", help="入库库位；不填时自动使用 locations 的第一个库位")
 
     args = ap.parse_args()
     db_path = Path(args.db)
@@ -846,13 +1054,34 @@ def main():
             show_alloc_detail(conn, args.proj)
             return
 
+        if args.cmd == "proj-forms":
+            export_project_forms(
+                conn,
+                project_code=args.proj,
+                outbound_csv=Path(args.outbound_csv),
+                inbound_csv=Path(args.inbound_csv),
+                lcsc_file=Path(args.lcsc_file) if args.lcsc_file else None,
+                inbound_location=args.inbound_loc,
+                apply_inbound=(args.apply_inbound or bool(args.lcsc_file)) and (not args.no_auto_inbound),
+            )
+            if (args.apply_inbound or bool(args.lcsc_file)) and (not args.no_auto_inbound):
+                conn.commit()
+            print(f"出库单已生成：{args.outbound_csv}")
+            print(f"入库单已生成：{args.inbound_csv}")
+            if (args.apply_inbound or bool(args.lcsc_file)) and (not args.no_auto_inbound):
+                if args.inbound_loc:
+                    print(f"已按入库单写库：loc={args.inbound_loc}")
+                else:
+                    print("已按入库单写库：loc=自动选择（locations表首个库位）")
+            return
+
     except sqlite3.IntegrityError as e:
         # 触发器/约束报错通常在这里
         conn.rollback()
         raise SystemExit(f"数据库约束失败：{e}")
     except Exception as e:
         conn.rollback()
-        raise
+        raise SystemExit(f"执行失败：{e}")
     finally:
         conn.close()
 

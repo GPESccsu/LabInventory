@@ -41,3 +41,64 @@ LabInventory/
 
 - `scripts/script_name.py` → `scripts/export_bom_parts_data.py`（用于从 BOM Excel 提取并导出 `parts_data.txt`）。
 - `scripts/pro_exp.py` → `scripts/project_bom_allocation_example.py`（用于项目创建、BOM 添加与库存预留示例）。
+
+## 项目出入库单自动填写（新增）
+
+当前 `inv.py` 已支持按项目自动生成出库/入库单（CSV）：
+
+- 命令：`proj-forms`
+- 设计要点：
+  - 出库单基于项目 BOM 生成，**数量列默认留空**（后续人工填写）。
+  - 入库单优先读取立创导出文件（`csv/xlsx/xls`），不提供时回退为项目 BOM 需求数量。
+  - 提供 `--lcsc-file` 时会默认将入库单数量写入 `stock`（可用 `--no-auto-inbound` 关闭）。
+
+### 快速示例
+
+仅生成单据：
+
+```bash
+python inv.py --db ./lab_inventory.db proj-forms \
+  --proj PJ-001 \
+  --outbound-csv ./out/PJ-001-出库单.csv \
+  --inbound-csv ./out/PJ-001-入库单.csv \
+  --lcsc-file ./BoM报价-立创_20260212.xlsx \
+  --no-auto-inbound
+```
+
+生成并直接入库：
+
+```bash
+python inv.py --db ./lab_inventory.db proj-forms \
+  --proj PJ-001 \
+  --outbound-csv ./out/PJ-001-出库单.csv \
+  --inbound-csv ./out/PJ-001-入库单.csv \
+  --lcsc-file ./BoM报价-立创_20260212.xlsx \
+  --inbound-loc C409-G01-S01-P01
+```
+
+### 推荐流程
+
+1. 先按项目生成出库单（数量空白）。
+2. 人工填写本次实际出库数量。
+3. 再根据填写结果执行出库扣减。
+4. 到货后用立创数据生成入库单并验收。
+5. 默认会入库写库（提供 `--lcsc-file` 时）；若只导单不写库，使用 `--no-auto-inbound`。
+
+详细说明见：`docs/项目出入库单自动填写说明.md`。
+
+
+### 注意事项（避免常见报错）
+
+- `proj-forms` 要求项目下至少有一类数据来源：
+  1) 已配置 BOM（`bom-set`），或
+  2) 已有项目预留记录（`reserve`）。
+- 如果两者都没有，会提示：
+  - `执行失败：项目 <code> 没有 BOM，也没有预留记录，无法生成单据。请先执行 bom-set 或 reserve。`
+- 如果项目代码不存在，会提示：
+  - `执行失败：项目不存在：<code>。请先执行 proj-new 或确认 --proj 参数。`
+
+
+
+- 若只想生成单据不写库存，可追加参数：`--no-auto-inbound`。
+
+- 若未提供 `--inbound-loc` 且 `locations` 为空，系统会自动创建并使用 `AUTO-INBOUND` 库位。
