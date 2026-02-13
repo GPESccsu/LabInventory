@@ -84,15 +84,3 @@ python inv.py --db ./lab_inventory.db proj-forms \
 5. 通过 `--apply-inbound`（可选）将确认数量写入库存。
 
 详细说明见：`docs/项目出入库单自动填写说明.md`。
-
-
-### 注意事项（避免常见报错）
-
-- `proj-forms` 要求项目下至少有一类数据来源：
-  1) 已配置 BOM（`bom-set`），或
-  2) 已有项目预留记录（`reserve`）。
-- 如果两者都没有，会提示：
-  - `执行失败：项目 <code> 没有 BOM，也没有预留记录，无法生成单据。请先执行 bom-set 或 reserve。`
-- 如果项目代码不存在，会提示：
-  - `执行失败：项目不存在：<code>。请先执行 proj-new 或确认 --proj 参数。`
-

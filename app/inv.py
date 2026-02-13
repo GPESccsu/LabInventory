@@ -745,43 +745,20 @@ def export_project_forms(
     inbound_location: str = "",
     apply_inbound: bool = False,
 ):
-    proj = conn.execute("SELECT id, code, name FROM projects WHERE code=?", (project_code,)).fetchone()
-    if proj is None:
-        raise RuntimeError(f"项目不存在：{project_code}。请先执行 proj-new 或确认 --proj 参数。")
-
-    bom_rows = conn.execute(
+    # 出库单：基于项目 BOM，数量留空给人工填写
+    out_rows = conn.execute(
         """
-        SELECT p.mpn, p.name AS name, p.package AS package, p.unit AS unit, b.req_qty
+        SELECT p.name AS name, p.package AS package, p.unit AS unit
         FROM project_bom b
+        JOIN projects pr ON pr.id = b.project_id
         JOIN parts p ON p.id = b.part_id
-        WHERE b.project_id = ?
+        WHERE pr.code = ?
         ORDER BY p.category, p.mpn
         """,
-        (int(proj["id"]),),
+        (project_code,),
     ).fetchall()
-
-    # 出库单：优先用 BOM；若 BOM 为空则回退为项目预留记录（按型号合并）
-    out_rows = bom_rows
     if not out_rows:
-        out_rows = conn.execute(
-            """
-            SELECT p.mpn, p.name AS name, p.package AS package, p.unit AS unit,
-                   SUM(CASE WHEN a.alloc_qty > 0 THEN a.alloc_qty ELSE 0 END) AS req_qty
-            FROM project_alloc a
-            JOIN parts p ON p.id = a.part_id
-            WHERE a.project_id = ?
-              AND a.status IN ('reserved','consumed')
-            GROUP BY p.id, p.mpn, p.name, p.package, p.unit
-            ORDER BY p.category, p.mpn
-            """,
-            (int(proj["id"]),),
-        ).fetchall()
-
-    if not out_rows:
-        raise RuntimeError(
-            f"项目 {project_code} 没有 BOM，也没有预留记录，无法生成单据。"
-            "请先执行 bom-set 或 reserve。"
-        )
+        raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
 
     now_str = datetime.now().strftime("%Y-%m-%d")
     outbound_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -789,22 +766,9 @@ def export_project_forms(
         w = csv.writer(f)
         w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "领用人", "领用时间", "用途", "项目"])
         for i, r in enumerate(out_rows, start=1):
-            w.writerow([
-                i,
-                now_str,
-                r["name"],
-                r["package"] or r["mpn"] or "",
-                r["unit"] or "pcs",
-                "",  # 按需求：数量留空人工填写
-                "",
-                "",
-                "",
-                "",
-                "",
-                project_code,
-            ])
+            w.writerow([i, now_str, r["name"], r["package"] or "", r["unit"] or "pcs", "", "", "", "", "", "", project_code])
 
-    # 入库单：优先使用立创导出数据；若未提供则回退 BOM（再回退预留数量）
+    # 入库单：优先使用立创导出数据；若未提供则回退为项目 BOM 需求数量
     inbound_records = []
     if lcsc_file:
         raw_rows = _load_lcsc_rows(lcsc_file)
@@ -818,30 +782,30 @@ def export_project_forms(
             total = _to_float(_pick_first(row, ["小计(RMB)", "总价", "total"], default="0"), 0.0)
             if total <= 0 and qty > 0 and price > 0:
                 total = qty * price
-            inbound_records.append(
-                {
-                    "mpn": mpn,
-                    "name": name,
-                    "package": _pick_first(row, ["封装", "Footprint 封装", "Footprint", "package"]),
-                    "unit": "pcs",
-                    "qty": qty,
-                    "price": price,
-                    "total": total,
-                }
-            )
+            inbound_records.append({
+                "mpn": mpn,
+                "name": name,
+                "package": _pick_first(row, ["封装", "Footprint 封装", "Footprint", "package"]),
+                "unit": "pcs",
+                "qty": qty,
+                "price": price,
+                "total": total,
+            })
     else:
-        source_rows = bom_rows if bom_rows else out_rows
+        rows = conn.execute(
+            """
+            SELECT p.mpn, p.name, p.package, p.unit, b.req_qty
+            FROM project_bom b
+            JOIN projects pr ON pr.id = b.project_id
+            JOIN parts p ON p.id = b.part_id
+            WHERE pr.code = ?
+            ORDER BY p.category, p.mpn
+            """,
+            (project_code,),
+        ).fetchall()
         inbound_records = [
-            {
-                "mpn": r["mpn"],
-                "name": r["name"],
-                "package": r["package"] or "",
-                "unit": r["unit"] or "pcs",
-                "qty": int(r["req_qty"]),
-                "price": 0.0,
-                "total": 0.0,
-            }
-            for r in source_rows
+            {"mpn": r["mpn"], "name": r["name"], "package": r["package"] or "", "unit": r["unit"] or "pcs", "qty": int(r["req_qty"]), "price": 0.0, "total": 0.0}
+            for r in rows
         ]
 
     inbound_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -849,17 +813,7 @@ def export_project_forms(
         w = csv.writer(f)
         w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "项目"])
         for i, r in enumerate(inbound_records, start=1):
-            w.writerow([
-                i,
-                now_str,
-                r["name"],
-                r["package"] or r["mpn"],
-                r["unit"],
-                r["qty"],
-                f"{r['price']:.4f}" if r["price"] else "",
-                f"{r['total']:.4f}" if r["total"] else "",
-                project_code,
-            ])
+            w.writerow([i, now_str, r["name"], r["package"] or r["mpn"], r["unit"], r["qty"], f"{r['price']:.4f}" if r["price"] else "", f"{r['total']:.4f}" if r["total"] else "", project_code])
 
     if apply_inbound:
         if not inbound_location:
