@@ -1,0 +1,9 @@
+=== BoM 导入日志 ===
+DB: G:\LabInventory\lab_inventory.db
+XLSX: G:\LabInventory\BoM报价-立创_20260212.xlsx
+Sheet: 0
+Dry-run: False
+目标表: parts; 唯一键: mpn
+[INFO] 已提交事务。
+=== 统计 ===
+总行数=56, 插入=37, 更新=19, 跳过=0, 失败=0

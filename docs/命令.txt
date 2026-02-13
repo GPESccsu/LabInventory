@@ -4,6 +4,8 @@ python inv.py --db "G:\LabInventory\lab_inventory.db" lcsc --url "https://item.s
 python inv.py --db "G:\LabInventory\lab_inventory.db" stock-in --mpn "LM1117-3.3" --loc "C409-G01-S01-P01" --qty 10
 python inv.py --db "G:\LabInventory\lab_inventory.db" reserve --proj "PJ-001" --mpn "LM1117-3.3" --loc "C409-G01-S01-P01" --qty 2
 
+python G:\LabInventory\inv.py --db "G:\LabInventory\lab_inventory.db" init-locations --room C409 --g01-shelves 3 --g02-shelves 1 --positions 10 --overwrite-note
+
 # 也可直接调用新的脚本路径
 python app/inv.py --db "G:\LabInventory\lab_inventory.db" proj-status --proj "PJ-001"
 python scripts/lcsc_to_db.py --db "G:\LabInventory\lab_inventory.db" --url "https://item.szlcsc.com/8143.html" --location "C409-G01-S01-P01" --qty 10
