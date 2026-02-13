@@ -12,3 +12,5 @@ python scripts/lcsc_to_db.py --db "G:\LabInventory\lab_inventory.db" --url "http
 python G:\LabInventory\inv.py --db "G:\LabInventory\lab_inventory.db" init-locations --room C409 --g01-shelves 3 --g02-shelves 1 --positions 10 --overwrite-note
 #导入嘉立创数据
 python G:\LabInventory\inv.py --db "G:\LabInventory\lab_inventory.db" proj-forms --lcsc-file "G:\LabInventory\BoM报价-立创_20260212.xlsx"  
+#导入proj1
+python inv.py --db ./lab_inventory.db proj-forms   --proj PJ-001  --outbound-csv ./out/PJ-001-出库单.csv   --inbound-csv ./out/PJ-001-入库单.csv   --lcsc-file ./BoM报价-立创_20260212.xlsx
