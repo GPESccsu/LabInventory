@@ -802,11 +802,10 @@ def export_project_forms(
     inbound_location: str = "",
     apply_inbound: bool = False,
 ):
-    now_str = datetime.now().strftime("%Y.%m.%d")
+    now_str = datetime.now().strftime("%Y-%m-%d")
 
     # 若提供立创文件：将其视作项目完整 BOM，覆盖 project_bom
     inbound_records = []
-    outbound_records = []
     if lcsc_file:
         raw_rows = _load_lcsc_rows(lcsc_file)
 
@@ -897,11 +896,29 @@ def export_project_forms(
             })
         inbound_records.sort(key=lambda x: x["seq"])
 
-    # 出/入库单：字段保持一致
-    if not outbound_records:
-        outbound_records = list(inbound_records)
+    # 出库单：基于（可能刚覆盖后的）项目 BOM
+    out_rows = conn.execute(
+        """
+        SELECT p.name AS name, p.package AS package, p.unit AS unit
+        FROM project_bom b
+        JOIN projects pr ON pr.id = b.project_id
+        JOIN parts p ON p.id = b.part_id
+        WHERE pr.code = ?
+        ORDER BY p.category, p.mpn
+        """,
+        (project_code,),
+    ).fetchall()
+    if not out_rows:
+        raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
 
-    # 未提供立创文件时，按项目 BOM 需求生成记录
+    outbound_csv.parent.mkdir(parents=True, exist_ok=True)
+    with outbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "领用人", "领用时间", "用途", "项目"])
+        for i, r in enumerate(out_rows, start=1):
+            w.writerow([i, now_str, r["name"], r["package"] or "", r["unit"] or "pcs", "", "", "", "", "", "", project_code])
+
+    # 未提供立创文件时，入库单回退为项目 BOM 需求数量
     if not lcsc_file:
         rows = conn.execute(
             """
@@ -914,9 +931,7 @@ def export_project_forms(
             """,
             (project_code,),
         ).fetchall()
-        if not rows:
-            raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
-        outbound_records = [
+        inbound_records = [
             {
                 "seq": int(r["id"]),
                 "name": r["mpn"],

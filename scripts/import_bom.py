@@ -200,47 +200,34 @@ def find_datasheet_pdf_url(session: requests.Session, page_url: str) -> str | No
     candidates: list[tuple[int, str]] = []
     blocklist = ("iso_iec_doc", "isoiec", "certificate", "认证", "rohs", "reach")
 
-    def score_and_add(url: str, text: str = "") -> None:
-        if not url:
-            return
-        lower_full = url.lower()
-        if ".pdf" not in lower_full:
-            return
-        if any(x in lower_full for x in blocklist):
-            return
-
-        lower_text = (text or "").lower()
-        score = 0
-        if re.search(r"datasheet|data\s*sheet|数据手册|规格书|说明书|手册", lower_text, re.I):
-            score += 5
-        if re.search(r"datasheet|data\s*sheet|规格书|manual", lower_full, re.I):
-            score += 3
-        if lower_full.endswith('.pdf'):
-            score += 2
-        candidates.append((score, url))
-
     for a in soup.find_all("a", href=True):
         href = clean_text(a.get("href"))
         if not href:
             continue
-        full = urljoin(page_url, href)
-        txt = clean_text(a.get_text(" ", strip=True)) or ""
-        score_and_add(full, txt)
 
-    # 页面脚本中有时直接包含 pdf 链接
-    raw = resp.text
-    for m in re.finditer(r'https?://[^\s"\']+\.pdf(?:\?[^\s"\']*)?', raw, flags=re.I):
-        score_and_add(m.group(0), "")
+        full = urljoin(page_url, href)
+        lower_full = full.lower()
+        if ".pdf" not in lower_full:
+            continue
+        if any(x in lower_full for x in blocklist):
+            continue
+
+        text = (clean_text(a.get_text(" ", strip=True)) or "").lower()
+        score = 0
+        if re.search(r"datasheet|data\s*sheet|数据手册|规格书|说明书|手册", text, re.I):
+            score += 4
+        if re.search(r"datasheet|data\s*sheet|规格书|manual", lower_full, re.I):
+            score += 3
+        if lower_full.endswith(".pdf"):
+            score += 1
+
+        candidates.append((score, full))
 
     if not candidates:
         return None
 
-    # 去重并按得分排序
-    dedup: dict[str, int] = {}
-    for score, url in candidates:
-        dedup[url] = max(score, dedup.get(url, -1))
-
-    best_url, best_score = max(dedup.items(), key=lambda item: item[1])
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best_score, best_url = candidates[0]
     return best_url if best_score > 0 else None
 
 
@@ -339,8 +326,8 @@ def main() -> int:
                     url = normalize_url(choose_column(row, ["商品链接"]))
                     category = choose_column(row, ["目录"])
                     package = choose_column(row, ["封装", "封装 Footprint", "Footprint 封装 Footprint"])
-                    params = choose_column(row, ["参数", "参数.1"])
-                    note = choose_column(row, ["Manufacturer"])
+                    params = choose_column(row, ["参数"])
+                    note = choose_column(row, ["Manufacturer", "品牌 Manufacturer", "品牌"])
                     supplier_part = choose_column(row, ["Supplier Part"])
                     qty = parse_qty(choose_column(row, ["Quantity"]))
 
