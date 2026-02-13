@@ -541,7 +541,7 @@ def get_part_id_by_mpn(conn, mpn: str) -> int:
     return int(r["id"])
 
 
-def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: str, datasheet: str, note: str) -> int:
+def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: str, url: str, datasheet: str, note: str) -> int:
     row = conn.execute("SELECT id FROM parts WHERE mpn=?", (mpn,)).fetchone()
     if row:
         pid = int(row["id"])
@@ -552,16 +552,17 @@ def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: 
                 category=COALESCE(NULLIF(?,''), category),
                 package=COALESCE(NULLIF(?,''), package),
                 params=COALESCE(NULLIF(?,''), params),
+                url=COALESCE(NULLIF(?,''), url),
                 datasheet=COALESCE(NULLIF(?,''), datasheet),
                 note=COALESCE(NULLIF(?,''), note)
             WHERE id=?
             """,
-            (name, category, package, params, datasheet, note, pid),
+            (name, category, package, params, url, datasheet, note, pid),
         )
         return pid
     cur = conn.execute(
-        "INSERT INTO parts (mpn, name, category, package, params, datasheet, note) VALUES (?,?,?,?,?,?,?)",
-        (mpn, name, category, package, params, datasheet, note),
+        "INSERT INTO parts (mpn, name, category, package, params, url, datasheet, note) VALUES (?,?,?,?,?,?,?,?)",
+        (mpn, name, category, package, params, url, datasheet, note),
     )
     return int(cur.lastrowid)
 
@@ -739,6 +740,12 @@ def _pick_first(d: dict, names: list[str], default=""):
     for n in names:
         if n in d and clean_text(d.get(n)):
             return clean_text(d.get(n))
+
+    # 兼容 pandas 重名列自动追加后缀（如 Manufacturer.1 / 商品链接.1）
+    for key, val in d.items():
+        base = re.sub(r"\.\d+$", "", str(key))
+        if base in names and clean_text(val):
+            return clean_text(val)
     return default
 
 
@@ -795,56 +802,108 @@ def export_project_forms(
     inbound_location: str = "",
     apply_inbound: bool = False,
 ):
-    # 出库单：基于项目 BOM，数量留空给人工填写
-    out_rows = conn.execute(
-        """
-        SELECT p.name AS name, p.package AS package, p.unit AS unit
-        FROM project_bom b
-        JOIN projects pr ON pr.id = b.project_id
-        JOIN parts p ON p.id = b.part_id
-        WHERE pr.code = ?
-        ORDER BY p.category, p.mpn
-        """,
-        (project_code,),
-    ).fetchall()
-    if not out_rows:
-        raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
+    now_str = datetime.now().strftime("%Y.%m.%d")
 
-    now_str = datetime.now().strftime("%Y-%m-%d")
-    outbound_csv.parent.mkdir(parents=True, exist_ok=True)
-    with outbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "领用人", "领用时间", "用途", "项目"])
-        for i, r in enumerate(out_rows, start=1):
-            w.writerow([i, now_str, r["name"], r["package"] or "", r["unit"] or "pcs", "", "", "", "", "", "", project_code])
-
-    # 入库单：优先使用立创导出数据；若未提供则回退为项目 BOM 需求数量
+    # 若提供立创文件：将其视作项目完整 BOM，覆盖 project_bom
     inbound_records = []
     if lcsc_file:
         raw_rows = _load_lcsc_rows(lcsc_file)
+
+        proj_row = conn.execute("SELECT id FROM projects WHERE code=?", (project_code,)).fetchone()
+        if proj_row is None:
+            conn.execute(
+                "INSERT INTO projects (code, name, note) VALUES (?, ?, ?)",
+                (project_code, project_code, f"imported_from={lcsc_file.name}"),
+            )
+            project_id = int(conn.execute("SELECT id FROM projects WHERE code=?", (project_code,)).fetchone()["id"])
+        else:
+            project_id = int(proj_row["id"])
+
+        bom_qty_by_part: dict[int, int] = {}
+        inbound_by_part: dict[int, dict] = {}
+
         for row in raw_rows:
             mpn = _pick_first(row, ["型号", "Manufacturer Part", "MPN", "mpn"])
-            name = _pick_first(row, ["商品名称", "Name", "名称"], default=mpn)
-            if not (mpn or name):
+            if not mpn:
                 continue
+
+            name = _pick_first(row, ["商品名称", "Name", "名称"], default=mpn)
+            category = _pick_first(row, ["目录", "分类", "Category", "一级分类", "二级分类"], default="立创导入")
+            package = _pick_first(row, ["封装", "Footprint 封装", "Footprint", "package"])
+            params = _pick_first(row, ["参数", "参数.1", "规格参数", "params"])
+            note = _pick_first(row, ["Manufacturer"], default=f"imported_from={lcsc_file.name}")
+            url = _pick_first(row, ["商品链接", "商品链接.1"])
+            url_norm = normalize_url(url) if url else ""
+
+            part_id = upsert_part(
+                conn,
+                mpn=mpn,
+                name=name or mpn,
+                category=category or "立创导入",
+                package=package,
+                params=params or "",
+                url=url_norm,
+                datasheet="",
+                note=note,
+            )
+
             qty = _to_int(_pick_first(row, ["购买数量", "数量", "Quantity", "qty"], default="0"), 0)
             price = _to_float(_pick_first(row, ["单价(RMB)", "单价", "price"], default="0"), 0.0)
-            total = _to_float(_pick_first(row, ["小计(RMB)", "总价", "total"], default="0"), 0.0)
-            if total <= 0 and qty > 0 and price > 0:
-                total = qty * price
+
+            if qty > 0:
+                bom_qty_by_part[part_id] = bom_qty_by_part.get(part_id, 0) + qty
+
+            part_row = conn.execute("SELECT id, mpn, name, unit FROM parts WHERE id=?", (part_id,)).fetchone()
+            if part_row is None:
+                continue
+
+            rec = inbound_by_part.get(part_id)
+            if rec is None:
+                rec = {
+                    "seq": int(part_row["id"]),
+                    "mpn": part_row["mpn"],
+                    "part_name": part_row["name"],
+                    "unit": part_row["unit"] or "pcs",
+                    "qty": 0,
+                    "price": 0.0,
+                }
+                inbound_by_part[part_id] = rec
+            rec["qty"] += max(0, qty)
+            if price > 0:
+                rec["price"] = price
+
+        # 覆盖项目 BOM：xlsx 即该项目完整用料
+        conn.execute("DELETE FROM project_bom WHERE project_id=?", (project_id,))
+        for part_id, req_qty in bom_qty_by_part.items():
+            conn.execute(
+                "INSERT INTO project_bom (project_id, part_id, req_qty, priority, note) VALUES (?,?,?,?,?)",
+                (project_id, part_id, int(req_qty), 2, f"imported_from={lcsc_file.name}"),
+            )
+
+        inbound_records = []
+        for rec in inbound_by_part.values():
+            qty = int(rec["qty"])
+            price = float(rec["price"])
             inbound_records.append({
-                "mpn": mpn,
-                "name": name,
-                "package": _pick_first(row, ["封装", "Footprint 封装", "Footprint", "package"]),
-                "unit": "pcs",
+                "seq": rec["seq"],
+                "name": rec["mpn"],             # 名称对应 mpn
+                "spec": rec["part_name"],       # 型号规格对应 parts.name
+                "unit": rec["unit"],
                 "qty": qty,
                 "price": price,
-                "total": total,
+                "total": qty * price,
+                "mpn": rec["mpn"],
             })
-    else:
+        inbound_records.sort(key=lambda x: x["seq"])
+
+    # 出/入库单：字段保持一致
+    outbound_records = list(inbound_records)
+
+    # 未提供立创文件时，按项目 BOM 需求生成记录
+    if not lcsc_file:
         rows = conn.execute(
             """
-            SELECT p.mpn, p.name, p.package, p.unit, b.req_qty
+            SELECT p.id, p.mpn, p.name, p.unit, b.req_qty
             FROM project_bom b
             JOIN projects pr ON pr.id = b.project_id
             JOIN parts p ON p.id = b.part_id
@@ -853,33 +912,76 @@ def export_project_forms(
             """,
             (project_code,),
         ).fetchall()
-        inbound_records = [
-            {"mpn": r["mpn"], "name": r["name"], "package": r["package"] or "", "unit": r["unit"] or "pcs", "qty": int(r["req_qty"]), "price": 0.0, "total": 0.0}
+        if not rows:
+            raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
+        outbound_records = [
+            {
+                "seq": int(r["id"]),
+                "name": r["mpn"],
+                "spec": r["name"],
+                "unit": r["unit"] or "pcs",
+                "qty": int(r["req_qty"]),
+                "price": 0.0,
+                "total": 0.0,
+                "mpn": r["mpn"],
+            }
             for r in rows
         ]
+        inbound_records = list(outbound_records)
+
+    if not outbound_records:
+        raise RuntimeError(f"项目未找到或 BOM 为空：{project_code}")
+
+    outbound_csv.parent.mkdir(parents=True, exist_ok=True)
+    with outbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "项目"])
+        for r in outbound_records:
+            w.writerow([
+                r["seq"],
+                now_str,
+                r["name"],
+                r["spec"],
+                r["unit"],
+                r["qty"],
+                f"{r['price']:.4f}" if r["price"] else "",
+                f"{r['total']:.4f}" if r["total"] else "",
+                project_code,
+            ])
 
     inbound_csv.parent.mkdir(parents=True, exist_ok=True)
     with inbound_csv.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["序号", "时间", "名称", "型号规格", "单位", "数量", "单价(元)", "总额(元)", "项目"])
-        for i, r in enumerate(inbound_records, start=1):
-            w.writerow([i, now_str, r["name"], r["package"] or r["mpn"], r["unit"], r["qty"], f"{r['price']:.4f}" if r["price"] else "", f"{r['total']:.4f}" if r["total"] else "", project_code])
+        for r in inbound_records:
+            w.writerow([
+                r["seq"],
+                now_str,
+                r["name"],
+                r["spec"],
+                r["unit"],
+                r["qty"],
+                f"{r['price']:.4f}" if r["price"] else "",
+                f"{r['total']:.4f}" if r["total"] else "",
+                project_code,
+            ])
 
     if apply_inbound:
         if not inbound_location:
             raise RuntimeError("执行入库写库时必须提供 --inbound-loc")
         for r in inbound_records:
-            if r["qty"] <= 0:
+            if int(r["qty"]) <= 0:
                 continue
             row = conn.execute("SELECT id FROM parts WHERE mpn=?", (r["mpn"],)).fetchone()
             if row is None:
                 upsert_part(
                     conn,
                     mpn=r["mpn"],
-                    name=r["name"] or r["mpn"],
+                    name=r["spec"] or r["mpn"],
                     category="立创导入",
-                    package=r["package"],
+                    package="",
                     params="",
+                    url="",
                     datasheet="",
                     note=f"project={project_code}",
                 )
@@ -890,6 +992,7 @@ def import_lcsc_file_to_parts_and_stock(
     conn,
     lcsc_file: Path,
     inbound_location: str = "LCSC-INBOX",
+    datasheets_dir: Path | None = None,
 ):
     raw_rows = _load_lcsc_rows(lcsc_file)
     part_written = 0
@@ -900,6 +1003,14 @@ def import_lcsc_file_to_parts_and_stock(
         (inbound_location, "自动创建：立创导入默认入库位"),
     )
 
+    datasheets_dir = datasheets_dir or (Path(conn.execute("PRAGMA database_list").fetchone()[2]).parent / "datasheets")
+
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    })
+
     for row in raw_rows:
         mpn = _pick_first(row, ["型号", "Manufacturer Part", "MPN", "mpn"])
         name = _pick_first(row, ["商品名称", "Name", "名称"], default=mpn)
@@ -908,7 +1019,30 @@ def import_lcsc_file_to_parts_and_stock(
 
         qty = _to_int(_pick_first(row, ["购买数量", "数量", "Quantity", "qty"], default="0"), 0)
         package = _pick_first(row, ["封装", "Footprint 封装", "Footprint", "package"])
-        category = _pick_first(row, ["分类", "Category", "一级分类", "二级分类"], default="立创导入")
+        category = _pick_first(row, ["目录", "分类", "Category", "一级分类", "二级分类"], default="立创导入")
+        params = _pick_first(row, ["参数", "参数.1", "规格参数", "params"])
+        note = _pick_first(row, ["Manufacturer"], default=f"imported_from={lcsc_file.name}")
+        supplier_part = _pick_first(row, ["商品编号", "Supplier Part", "LCSC", "LCSC编号"])
+        url = _pick_first(row, ["商品链接", "商品链接.1"])
+        url_norm = normalize_url(url) if url else ""
+
+        datasheet_local = ""
+        if url_norm:
+            try:
+                page_resp = session.get(url_norm, timeout=20)
+                page_resp.raise_for_status()
+                page_resp.encoding = page_resp.apparent_encoding or "utf-8"
+                soup = BeautifulSoup(page_resp.text, "lxml")
+                pdf_url = find_datasheet_url(soup, url_norm)
+                if pdf_url:
+                    base = safe_filename(mpn)
+                    if supplier_part:
+                        base += f"__{safe_filename(supplier_part)}"
+                    out_pdf = datasheets_dir / f"{base}.pdf"
+                    if download_pdf(session, pdf_url, out_pdf):
+                        datasheet_local = str(out_pdf)
+            except Exception:
+                pass
 
         part_id = upsert_part(
             conn,
@@ -916,9 +1050,10 @@ def import_lcsc_file_to_parts_and_stock(
             name=name or mpn,
             category=category or "立创导入",
             package=package,
-            params="",
-            datasheet="",
-            note=f"imported_from={lcsc_file.name}",
+            params=params or "",
+            url=url_norm,
+            datasheet=datasheet_local,
+            note=note,
         )
         if part_id:
             part_written += 1
@@ -1040,6 +1175,7 @@ def main():
                 category=item.category,
                 package=item.package,
                 params=item.params_text,      # 参数表进 params
+                url=item.page_url,
                 datasheet=item.datasheet_local or item.page_url,
                 note=item.note,
             )
@@ -1099,6 +1235,7 @@ def main():
                     conn,
                     lcsc_file=resolve_input_path(args.lcsc_file, cwd),
                     inbound_location=loc,
+                    datasheets_dir=(db_path.parent / "datasheets"),
                 )
                 conn.commit()
                 print(f"立创文件已导入：{args.lcsc_file}")
@@ -1121,7 +1258,7 @@ def main():
                 inbound_location=args.inbound_loc,
                 apply_inbound=args.apply_inbound,
             )
-            if args.apply_inbound:
+            if args.apply_inbound or args.lcsc_file:
                 conn.commit()
             print(f"出库单已生成：{args.outbound_csv}")
             print(f"入库单已生成：{args.inbound_csv}")
