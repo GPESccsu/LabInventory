@@ -120,6 +120,7 @@ def parse_qty(value: Any) -> float | None:
 
 
 def choose_column(row: pd.Series, candidates: list[str]) -> Any:
+    candidate_set = set(candidates)
     for col in candidates:
         if col in row.index:
             val = row[col]
@@ -127,6 +128,16 @@ def choose_column(row: pd.Series, candidates: list[str]) -> Any:
                 t = clean_text(val)
                 if t:
                     return t
+
+    # 兼容重复列名被 pandas 自动改写成 `.1`、`.2` 的情况
+    for col in row.index:
+        if base_col_name(str(col)) not in candidate_set:
+            continue
+        val = row[col]
+        if not pd.isna(val):
+            t = clean_text(val)
+            if t:
+                return t
     return None
 
 
@@ -186,17 +197,38 @@ def find_datasheet_pdf_url(session: requests.Session, page_url: str) -> str | No
         return None
 
     soup = BeautifulSoup(resp.text, "html.parser")
+    candidates: list[tuple[int, str]] = []
+    blocklist = ("iso_iec_doc", "isoiec", "certificate", "认证", "rohs", "reach")
+
     for a in soup.find_all("a", href=True):
         href = clean_text(a.get("href"))
         if not href:
             continue
-        text = clean_text(a.get_text(" ", strip=True)) or ""
+
         full = urljoin(page_url, href)
-        if "pdf" in full.lower() and re.search(r"datasheet|数据手册", text, re.I):
-            return full
-        if full.lower().endswith(".pdf"):
-            return full
-    return None
+        lower_full = full.lower()
+        if ".pdf" not in lower_full:
+            continue
+        if any(x in lower_full for x in blocklist):
+            continue
+
+        text = (clean_text(a.get_text(" ", strip=True)) or "").lower()
+        score = 0
+        if re.search(r"datasheet|data\s*sheet|数据手册|规格书|说明书|手册", text, re.I):
+            score += 4
+        if re.search(r"datasheet|data\s*sheet|规格书|manual", lower_full, re.I):
+            score += 3
+        if lower_full.endswith(".pdf"):
+            score += 1
+
+        candidates.append((score, full))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best_score, best_url = candidates[0]
+    return best_url if best_score > 0 else None
 
 
 def safe_filename(name: str) -> str:
@@ -285,6 +317,7 @@ def main() -> int:
                     package = choose_column(row, ["封装", "封装 Footprint", "Footprint 封装 Footprint"])
                     params = choose_column(row, ["参数"])
                     note = choose_column(row, ["Manufacturer", "品牌 Manufacturer", "品牌"])
+                    supplier_part = choose_column(row, ["Supplier Part"])
                     qty = parse_qty(choose_column(row, ["Quantity"]))
 
                     if qty is None:
@@ -305,7 +338,10 @@ def main() -> int:
                     if url:
                         pdf_url = find_datasheet_pdf_url(session, url)
                         if pdf_url:
-                            filename = safe_filename(f"{mpn}.pdf")
+                            if supplier_part:
+                                filename = safe_filename(f"{mpn}__{supplier_part}.pdf")
+                            else:
+                                filename = safe_filename(f"{mpn}.pdf")
                             pdf_path = datasheets_dir / filename
                             if download_pdf(session, pdf_url, pdf_path):
                                 datasheet_local = str(pdf_path)
