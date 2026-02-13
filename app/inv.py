@@ -1019,7 +1019,7 @@ def main():
         raise SystemExit(f"数据库约束失败：{e}")
     except Exception as e:
         conn.rollback()
-        raise
+        raise SystemExit(f"执行失败：{e}")
     finally:
         conn.close()
 
