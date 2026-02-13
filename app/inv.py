@@ -1,5 +1,6 @@
 import argparse
 import csv
+import os
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -34,6 +35,42 @@ def normalize_url(url: str) -> str:
 
 def now_local_sql() -> str:
     return "datetime('now','localtime')"
+
+
+def resolve_input_path(raw_path: str, cwd: Path) -> Path:
+    """兼容 Windows 路径输入（如 G:/LabInventory/xxx）并映射到当前仓库。"""
+    candidate = Path(raw_path)
+    if candidate.exists():
+        return candidate
+
+    normalized = raw_path.replace('\\', '/')
+    mapped = Path(normalized)
+    if mapped.exists():
+        return mapped
+
+    m = re.match(r'^[A-Za-z]:/LabInventory/(.+)$', normalized)
+    if m:
+        local = cwd / m.group(1)
+        if local.exists():
+            return local
+
+    local_by_name = cwd / Path(normalized).name
+    if local_by_name.exists():
+        return local_by_name
+
+    return candidate
+
+
+def resolve_output_path(raw_path: str, cwd: Path) -> Path:
+    candidate = Path(raw_path)
+    if os.name == 'nt':
+        return candidate
+
+    normalized = raw_path.replace('\\', '/')
+    m = re.match(r'^[A-Za-z]:/LabInventory/(.+)$', normalized)
+    if m:
+        return cwd / m.group(1)
+    return Path(normalized)
 
 
 # ---------------------------
@@ -729,6 +766,19 @@ def _load_lcsc_rows(path: Path) -> list[dict]:
         except Exception as e:
             raise RuntimeError("读取 Excel 需要 pandas，请先安装 pandas") from e
         df = pd.read_excel(path)
+        # 兼容立创 BOM 报价单：表头通常不在第一行
+        first_cols = [str(c) for c in df.columns]
+        if not any(x in first_cols for x in ["型号", "Manufacturer Part", "商品名称", "购买数量", "数量"]):
+            raw = pd.read_excel(path, header=None)
+            header_idx = None
+            expected = {"型号", "Manufacturer Part", "商品名称", "购买数量", "数量", "封装", "分类"}
+            for i in range(min(len(raw), 30)):
+                vals = {clean_text(v) for v in raw.iloc[i].tolist() if clean_text(v)}
+                if len(expected.intersection(vals)) >= 3:
+                    header_idx = i
+                    break
+            if header_idx is not None:
+                df = pd.read_excel(path, header=header_idx)
         return [
             {str(k): ("" if pd.isna(v) else str(v)) for k, v in row.items()}
             for row in df.to_dict(orient="records")
@@ -834,6 +884,52 @@ def export_project_forms(
                     note=f"project={project_code}",
                 )
             add_stock(conn, r["mpn"], inbound_location, int(r["qty"]), "new", f"project={project_code} lcsc入库")
+
+
+def import_lcsc_file_to_parts_and_stock(
+    conn,
+    lcsc_file: Path,
+    inbound_location: str = "LCSC-INBOX",
+):
+    raw_rows = _load_lcsc_rows(lcsc_file)
+    part_written = 0
+    stock_written = 0
+
+    conn.execute(
+        "INSERT OR IGNORE INTO locations (location, note) VALUES (?, ?)",
+        (inbound_location, "自动创建：立创导入默认入库位"),
+    )
+
+    for row in raw_rows:
+        mpn = _pick_first(row, ["型号", "Manufacturer Part", "MPN", "mpn"])
+        name = _pick_first(row, ["商品名称", "Name", "名称"], default=mpn)
+        if not mpn:
+            continue
+
+        qty = _to_int(_pick_first(row, ["购买数量", "数量", "Quantity", "qty"], default="0"), 0)
+        package = _pick_first(row, ["封装", "Footprint 封装", "Footprint", "package"])
+        category = _pick_first(row, ["分类", "Category", "一级分类", "二级分类"], default="立创导入")
+
+        part_id = upsert_part(
+            conn,
+            mpn=mpn,
+            name=name or mpn,
+            category=category or "立创导入",
+            package=package,
+            params="",
+            datasheet="",
+            note=f"imported_from={lcsc_file.name}",
+        )
+        if part_id:
+            part_written += 1
+
+        if qty > 0:
+            add_stock(conn, mpn, inbound_location, qty, "new", f"imported_from={lcsc_file.name}")
+            stock_written += 1
+
+    return part_written, stock_written
+
+
 # ---------------------------
 # CLI
 # ---------------------------
@@ -906,16 +1002,17 @@ def main():
     p.add_argument("--proj", required=True)
 
     # project forms
-    p = sub.add_parser("proj-forms", help="按项目生成出库/入库单 CSV；出库数量留空人工填写")
-    p.add_argument("--proj", required=True, help="项目 code")
-    p.add_argument("--outbound-csv", required=True, help="导出的出库单 CSV 路径")
-    p.add_argument("--inbound-csv", required=True, help="导出的入库单 CSV 路径")
+    p = sub.add_parser("proj-forms", help="按项目生成出库/入库单 CSV；或仅按立创文件自动写入 parts+stock")
+    p.add_argument("--proj", default="", help="项目 code")
+    p.add_argument("--outbound-csv", default="", help="导出的出库单 CSV 路径")
+    p.add_argument("--inbound-csv", default="", help="导出的入库单 CSV 路径")
     p.add_argument("--lcsc-file", default="", help="立创导出文件（csv/xlsx/xls），用于填充入库单")
     p.add_argument("--apply-inbound", action="store_true", help="将入库单数量写入库存")
     p.add_argument("--inbound-loc", default="", help="执行 --apply-inbound 时的入库库位")
 
     args = ap.parse_args()
-    db_path = Path(args.db)
+    cwd = Path.cwd()
+    db_path = resolve_input_path(args.db, cwd)
 
     if not db_path.exists():
         raise SystemExit(f"数据库不存在：{db_path}")
@@ -996,12 +1093,31 @@ def main():
             return
 
         if args.cmd == "proj-forms":
+            if args.lcsc_file and not args.proj and not args.outbound_csv and not args.inbound_csv:
+                loc = args.inbound_loc or "LCSC-INBOX"
+                part_written, stock_written = import_lcsc_file_to_parts_and_stock(
+                    conn,
+                    lcsc_file=resolve_input_path(args.lcsc_file, cwd),
+                    inbound_location=loc,
+                )
+                conn.commit()
+                print(f"立创文件已导入：{args.lcsc_file}")
+                print(f"parts 写入/更新：{part_written} 条")
+                print(f"stock 写入：{stock_written} 条，库位={loc}")
+                return
+
+            if not (args.proj and args.outbound_csv and args.inbound_csv):
+                raise RuntimeError(
+                    "proj-forms 生成单据模式需要同时提供 --proj --outbound-csv --inbound-csv；"
+                    "若仅想导入立创文件到 parts/stock，可只提供 --lcsc-file"
+                )
+
             export_project_forms(
                 conn,
                 project_code=args.proj,
-                outbound_csv=Path(args.outbound_csv),
-                inbound_csv=Path(args.inbound_csv),
-                lcsc_file=Path(args.lcsc_file) if args.lcsc_file else None,
+                outbound_csv=resolve_output_path(args.outbound_csv, cwd),
+                inbound_csv=resolve_output_path(args.inbound_csv, cwd),
+                lcsc_file=resolve_input_path(args.lcsc_file, cwd) if args.lcsc_file else None,
                 inbound_location=args.inbound_loc,
                 apply_inbound=args.apply_inbound,
             )
