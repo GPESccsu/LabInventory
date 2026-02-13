@@ -11,8 +11,8 @@ LabInventory/
 ├── scripts/                # 辅助/一次性脚本
 │   ├── lcsc_to_db.py
 │   ├── import_bom.py
-│   ├── pro_exp.py
-│   └── script_name.py
+│   ├── project_bom_allocation_example.py
+│   └── export_bom_parts_data.py
 ├── docs/                   # 文档与命令示例
 │   └── 命令.txt
 ├── data/
@@ -36,3 +36,8 @@ LabInventory/
 2. 一次性脚本统一收敛到 `scripts/`。
 3. 命令示例、操作手册放在 `docs/`。
 4. 新增数据文件优先放 `data/` 下对应子目录，避免根目录继续堆积。
+
+## 脚本重命名说明
+
+- `scripts/script_name.py` → `scripts/export_bom_parts_data.py`（用于从 BOM Excel 提取并导出 `parts_data.txt`）。
+- `scripts/pro_exp.py` → `scripts/project_bom_allocation_example.py`（用于项目创建、BOM 添加与库存预留示例）。
