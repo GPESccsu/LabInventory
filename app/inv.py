@@ -821,11 +821,13 @@ def export_project_forms(
 
         bom_qty_by_part: dict[int, int] = {}
         inbound_by_part: dict[int, dict] = {}
+        parsed_part_rows = 0
 
         for row in raw_rows:
             mpn = _pick_first(row, ["型号", "Manufacturer Part", "MPN", "mpn"])
             if not mpn:
                 continue
+            parsed_part_rows += 1
 
             name = _pick_first(row, ["商品名称", "Name", "名称"], default=mpn)
             category = _pick_first(row, ["目录", "分类", "Category", "一级分类", "二级分类"], default="立创导入")
@@ -873,6 +875,11 @@ def export_project_forms(
                 rec["price"] = price
 
         # 覆盖项目 BOM：xlsx 即该项目完整用料
+        # 为避免数量列识别失败导致静默清空 BOM，未解析出任何有效数量时直接报错。
+        if parsed_part_rows > 0 and not bom_qty_by_part:
+            raise RuntimeError(
+                "未从立创文件解析到有效数量（qty>0），已取消覆盖项目 BOM；请检查数量列表头/格式。"
+            )
         conn.execute("DELETE FROM project_bom WHERE project_id=?", (project_id,))
         for part_id, req_qty in bom_qty_by_part.items():
             conn.execute(
