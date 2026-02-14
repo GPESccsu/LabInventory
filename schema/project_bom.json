@@ -1,0 +1,298 @@
+[
+    {
+        "id": 38,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 39,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 100
+    },
+    {
+        "id": 39,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 40,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 60
+    },
+    {
+        "id": 40,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 41,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 30
+    },
+    {
+        "id": 41,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 42,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 150
+    },
+    {
+        "id": 42,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 43,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 40
+    },
+    {
+        "id": 43,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 44,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 10
+    },
+    {
+        "id": 44,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 45,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 20
+    },
+    {
+        "id": 45,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 46,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 12
+    },
+    {
+        "id": 46,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 47,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 9
+    },
+    {
+        "id": 47,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 48,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 50
+    },
+    {
+        "id": 48,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 49,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 10
+    },
+    {
+        "id": 49,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 50,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 6
+    },
+    {
+        "id": 50,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 51,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    },
+    {
+        "id": 51,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 52,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 50
+    },
+    {
+        "id": 52,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 53,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 10
+    },
+    {
+        "id": 53,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 54,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    },
+    {
+        "id": 54,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 55,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 50
+    },
+    {
+        "id": 55,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 56,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    },
+    {
+        "id": 56,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 57,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 100
+    },
+    {
+        "id": 57,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 58,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 50
+    },
+    {
+        "id": 58,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 59,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 100
+    },
+    {
+        "id": 59,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 60,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 100
+    },
+    {
+        "id": 60,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 61,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 5
+    },
+    {
+        "id": 61,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 62,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    },
+    {
+        "id": 62,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 63,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 10
+    },
+    {
+        "id": 63,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 64,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 500
+    },
+    {
+        "id": 64,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 65,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    },
+    {
+        "id": 65,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 66,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    },
+    {
+        "id": 66,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 67,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 5
+    },
+    {
+        "id": 67,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 68,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 5
+    },
+    {
+        "id": 68,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 69,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 6
+    },
+    {
+        "id": 69,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 70,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    },
+    {
+        "id": 70,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 71,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 100
+    },
+    {
+        "id": 71,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 72,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 20
+    },
+    {
+        "id": 72,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 73,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 50
+    },
+    {
+        "id": 73,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 74,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 100
+    },
+    {
+        "id": 74,
+        "note": "imported_from=BoM报价-立创_20260212.xlsx",
+        "part_id": 75,
+        "priority": 2,
+        "project_id": 1,
+        "req_qty": 3
+    }
+]

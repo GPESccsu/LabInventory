@@ -1,0 +1,166 @@
+[
+    {
+        "location": "C409-G01-S01-P01",
+        "note": "C409 G01 第1层 位01 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P02",
+        "note": "C409 G01 第1层 位02 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P03",
+        "note": "C409 G01 第1层 位03 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P04",
+        "note": "C409 G01 第1层 位04 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P05",
+        "note": "C409 G01 第1层 位05 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P06",
+        "note": "C409 G01 第1层 位06 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P07",
+        "note": "C409 G01 第1层 位07 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P08",
+        "note": "C409 G01 第1层 位08 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P09",
+        "note": "C409 G01 第1层 位09 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S01-P10",
+        "note": "C409 G01 第1层 位10 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P01",
+        "note": "C409 G01 第2层 位01 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P02",
+        "note": "C409 G01 第2层 位02 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P03",
+        "note": "C409 G01 第2层 位03 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P04",
+        "note": "C409 G01 第2层 位04 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P05",
+        "note": "C409 G01 第2层 位05 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P06",
+        "note": "C409 G01 第2层 位06 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P07",
+        "note": "C409 G01 第2层 位07 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P08",
+        "note": "C409 G01 第2层 位08 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P09",
+        "note": "C409 G01 第2层 位09 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S02-P10",
+        "note": "C409 G01 第2层 位10 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P01",
+        "note": "C409 G01 第3层 位01 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P02",
+        "note": "C409 G01 第3层 位02 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P03",
+        "note": "C409 G01 第3层 位03 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P04",
+        "note": "C409 G01 第3层 位04 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P05",
+        "note": "C409 G01 第3层 位05 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P06",
+        "note": "C409 G01 第3层 位06 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P07",
+        "note": "C409 G01 第3层 位07 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P08",
+        "note": "C409 G01 第3层 位08 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P09",
+        "note": "C409 G01 第3层 位09 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G01-S03-P10",
+        "note": "C409 G01 第3层 位10 | 三层柜 30cm深x80cm长x35cm高"
+    },
+    {
+        "location": "C409-G02-S01-P01",
+        "note": "C409 G02 第1层 位01 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P02",
+        "note": "C409 G02 第1层 位02 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P03",
+        "note": "C409 G02 第1层 位03 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P04",
+        "note": "C409 G02 第1层 位04 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P05",
+        "note": "C409 G02 第1层 位05 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P06",
+        "note": "C409 G02 第1层 位06 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P07",
+        "note": "C409 G02 第1层 位07 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P08",
+        "note": "C409 G02 第1层 位08 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P09",
+        "note": "C409 G02 第1层 位09 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "C409-G02-S01-P10",
+        "note": "C409 G02 第1层 位10 | 一层柜 40cm深x100cm长x40cm高"
+    },
+    {
+        "location": "LCSC-INBOX",
+        "note": "自动创建：立创导入默认入库位"
+    }
+]
