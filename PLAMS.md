@@ -1,143 +1,143 @@
-# PLAN.md ¡ª µç×ÓÔª¼þ¿â´æ£º³öÈë¿â£¨¿ÉÑ¡ÏîÄ¿£©+ Á÷Ë® + XLSX
+# PLAN.md â€” ç”µå­å…ƒä»¶åº“å­˜ï¼šå‡ºå…¥åº“ï¼ˆå¯é€‰é¡¹ç›®ï¼‰+ æµæ°´ + XLSX
 
-±¾¼Æ»®ÃæÏò¡°Ã»ÓÐÉÏÏÂÎÄµÄÊµÏÖÕß¡±£¬ÒªÇó°´²½Öè½»¸¶¿ÉÔËÐÐ½á¹û¡£
-²Î¿¼£ºCodex ExecPlans/PLANS.md µÄÐ´·¨£¨Ç¿µ÷¿ÉÖ´ÐÐ²½ÖèÓëÑéÊÕ£©¡£(external)
+æœ¬è®¡åˆ’é¢å‘â€œæ²¡æœ‰ä¸Šä¸‹æ–‡çš„å®žçŽ°è€…â€ï¼Œè¦æ±‚æŒ‰æ­¥éª¤äº¤ä»˜å¯è¿è¡Œç»“æžœã€‚
+å‚è€ƒï¼šCodex ExecPlans/PLANS.md çš„å†™æ³•ï¼ˆå¼ºè°ƒå¯æ‰§è¡Œæ­¥éª¤ä¸ŽéªŒæ”¶ï¼‰ã€‚(external)
 
-## ±³¾°£¨ÏÖ×´£©
-- µ±Ç° DB ÔÚ inv.py ÄÚÍ¨¹ý DDL ³õÊ¼»¯£ºparts / stock / locations + projects / project_bom / project_alloc£¬²¢º¬ÊÓÍ¼Óë´¥·¢Æ÷¡£:contentReference[oaicite:19]{index=19} :contentReference[oaicite:20]{index=20}:contentReference[oaicite:21]{index=21}:contentReference[oaicite:22]{index=22}
-:contentReference[oaicite:23]{index=23}Òª:contentReference[oaicite:24]{index=24}¡£:contentReference[oaicite:25]{index=25}
-- ÓÃ»§ÐèÇó£ºÐÂÔö¡°·ÇÏîÄ¿³ö¿â/Èë¿â¿ÉÑ¡ÏîÄ¿¡±£¬²¢ÇÒÏ£Íû¿É:contentReference[oaicite:26]{index=26}±ØÐëÊµÏÖ£©
-1) ÐÂÔö¡°Í³Ò»Á÷Ë®¡±£ºÈÎºÎÈë¿â/³ö¿â/µ÷Õû¶¼Âä¿âÒ»Ìõ½»Ò×¼ÇÂ¼£¨¿É×·ËÝ£©¡£
-2) ÐÂÔö¡°·ÇÏîÄ¿³ö¿â¡±£º²»ÐèÒª project£¬Ò²ÄÜ´Ó stock ¿Û¼õ£¬²¢Ð´Á÷Ë®¡£
-3) ±£³ÖÏÖÓÐÏîÄ¿Á÷³Ì²»ÆÆ»µ£ºreserve/release/consume ÈÔ¿ÉÓÃ£¬ÇÒ¼ÌÐøÊÜ¡°½ûÖ¹³¬Ô¤Áô¡±±£»¤¡£
-4) ÐÂÔö¡°µ¼³ö schema¡±£ºÒ»ÌõÃüÁîÊä³ö DB ½á¹¹£¨±í/Ë÷Òý/ÊÓÍ¼/´¥·¢Æ÷£©£¬±ãÓÚ±¸·Ý/Éó¼Æ¡£
-5) Ìá¹© XLSX ÅúÁ¿½»Ò×Èë¿Ú£º°´Ä£°åµ¼Èë¶àÐÐ½»Ò×£¨¿ÉÑ¡ project_code£©¡£
+## èƒŒæ™¯ï¼ˆçŽ°çŠ¶ï¼‰
+- å½“å‰ DB åœ¨ inv.py å†…é€šè¿‡ DDL åˆå§‹åŒ–ï¼šparts / stock / locations + projects / project_bom / project_allocï¼Œå¹¶å«è§†å›¾ä¸Žè§¦å‘å™¨ã€‚:contentReference[oaicite:19]{index=19} :contentReference[oaicite:20]{index=20}:contentReference[oaicite:21]{index=21}:contentReference[oaicite:22]{index=22}
+:contentReference[oaicite:23]{index=23}è¦:contentReference[oaicite:24]{index=24}ã€‚:contentReference[oaicite:25]{index=25}
+- ç”¨æˆ·éœ€æ±‚ï¼šæ–°å¢žâ€œéžé¡¹ç›®å‡ºåº“/å…¥åº“å¯é€‰é¡¹ç›®â€ï¼Œå¹¶ä¸”å¸Œæœ›å¯:contentReference[oaicite:26]{index=26}å¿…é¡»å®žçŽ°ï¼‰
+1) æ–°å¢žâ€œç»Ÿä¸€æµæ°´â€ï¼šä»»ä½•å…¥åº“/å‡ºåº“/è°ƒæ•´éƒ½è½åº“ä¸€æ¡äº¤æ˜“è®°å½•ï¼ˆå¯è¿½æº¯ï¼‰ã€‚
+2) æ–°å¢žâ€œéžé¡¹ç›®å‡ºåº“â€ï¼šä¸éœ€è¦ projectï¼Œä¹Ÿèƒ½ä»Ž stock æ‰£å‡ï¼Œå¹¶å†™æµæ°´ã€‚
+3) ä¿æŒçŽ°æœ‰é¡¹ç›®æµç¨‹ä¸ç ´åï¼šreserve/release/consume ä»å¯ç”¨ï¼Œä¸”ç»§ç»­å—â€œç¦æ­¢è¶…é¢„ç•™â€ä¿æŠ¤ã€‚
+4) æ–°å¢žâ€œå¯¼å‡º schemaâ€ï¼šä¸€æ¡å‘½ä»¤è¾“å‡º DB ç»“æž„ï¼ˆè¡¨/ç´¢å¼•/è§†å›¾/è§¦å‘å™¨ï¼‰ï¼Œä¾¿äºŽå¤‡ä»½/å®¡è®¡ã€‚
+5) æä¾› XLSX æ‰¹é‡äº¤æ˜“å…¥å£ï¼šæŒ‰æ¨¡æ¿å¯¼å…¥å¤šè¡Œäº¤æ˜“ï¼ˆå¯é€‰ project_codeï¼‰ã€‚
 
-## ·ÇÄ¿±ê£¨±¾ÆÚ²»×ö£©
-- ²»×ö Web UI£»²»ÒýÈë·þÎñ¶Ë¿ò¼Ü¡£
-- ²»×ö¸´ÔÓÈ¨ÏÞ/ÉóÅúÁ÷£¨¿ÉÁôÀ©Õ¹µã£©¡£
+## éžç›®æ ‡ï¼ˆæœ¬æœŸä¸åšï¼‰
+- ä¸åš Web UIï¼›ä¸å¼•å…¥æœåŠ¡ç«¯æ¡†æž¶ã€‚
+- ä¸åšå¤æ‚æƒé™/å®¡æ‰¹æµï¼ˆå¯ç•™æ‰©å±•ç‚¹ï¼‰ã€‚
 
-## Êý¾ÝÄ£ÐÍ¸ÄÔì£¨½¨Òé·½°¸£©
-ÐÂÔö±í£¨ÃüÃû¿Éµ÷Õû£¬µ«±ØÐëÂú×ã×Ö¶ÎÓïÒå£©£º
+## æ•°æ®æ¨¡åž‹æ”¹é€ ï¼ˆå»ºè®®æ–¹æ¡ˆï¼‰
+æ–°å¢žè¡¨ï¼ˆå‘½åå¯è°ƒæ•´ï¼Œä½†å¿…é¡»æ»¡è¶³å­—æ®µè¯­ä¹‰ï¼‰ï¼š
 
-A. inventory_txn£¨½»Ò×Ö÷±í£©
+A. inventory_txnï¼ˆäº¤æ˜“ä¸»è¡¨ï¼‰
 - id (PK)
 - txn_type: 'IN' | 'OUT' | 'ADJUST'
-- project_id (NULLABLE) ¡ª ¿ÉÎª¿Õ±íÊ¾²»¹é¼¯µ½ÏîÄ¿
-- ref (TEXT) ¡ª Íâ²¿µ¥¾ÝºÅ/Åú´ÎºÅ£¨¿ÉÑ¡£©
+- project_id (NULLABLE) â€” å¯ä¸ºç©ºè¡¨ç¤ºä¸å½’é›†åˆ°é¡¹ç›®
+- ref (TEXT) â€” å¤–éƒ¨å•æ®å·/æ‰¹æ¬¡å·ï¼ˆå¯é€‰ï¼‰
 - note (TEXT)
 - created_at
 
-B. inventory_txn_line£¨½»Ò×Ã÷Ï¸£©
+B. inventory_txn_lineï¼ˆäº¤æ˜“æ˜Žç»†ï¼‰
 - id (PK)
 - txn_id (FK -> inventory_txn.id)
 - part_id (FK -> parts.id)
-- mpn_snapshot (TEXT) ¡ª ·ÀÖ¹Î´À´ mpn ¸ÄÃû×·ËÝÀ§ÄÑ£¨¿ÉÑ¡£©
-- location (TEXT, nullable: Ä³Ð©µ÷Õû¿ÉÄÜ²»Ö¸¶¨¿âÎ»£»µ« IN/OUT ÍÆ¼öÇ¿ÖÆ location)
-- qty_delta (INTEGER) ¡ª Èë¿âÎªÕý£¬³ö¿âÎª¸º
-- condition (TEXT) ¡ª ¼Ì³Ð stock.condition ÓïÒå£¨¿ÉÑ¡£©
+- mpn_snapshot (TEXT) â€” é˜²æ­¢æœªæ¥ mpn æ”¹åè¿½æº¯å›°éš¾ï¼ˆå¯é€‰ï¼‰
+- location (TEXT, nullable: æŸäº›è°ƒæ•´å¯èƒ½ä¸æŒ‡å®šåº“ä½ï¼›ä½† IN/OUT æŽ¨èå¼ºåˆ¶ location)
+- qty_delta (INTEGER) â€” å…¥åº“ä¸ºæ­£ï¼Œå‡ºåº“ä¸ºè´Ÿ
+- condition (TEXT) â€” ç»§æ‰¿ stock.condition è¯­ä¹‰ï¼ˆå¯é€‰ï¼‰
 - note
 
-Ò»ÖÂÐÔÒªÇó£º
-- ¶Ô IN/OUT£ºÐ´Èë txn_line ºó£¬±ØÐëÍ¬²½¸üÐÂ stock£¨²åÈë»ò¸üÐÂ¶ÔÓ¦ part_id+location£©¡£
-- ¶Ô OUT£º±ØÐëÐ£Ñé¿Û¼õºó²»Îª¸º£»Èô¸ºÔòÕû±ÊÊÂÎñ»Ø¹ö¡£
-- Èç¹ûÌá¹© project_code£ºÒªÄÜÓ³Éäµ½ projects.id£»ÕÒ²»µ½Ôò±¨´í£¨³ý·ÇÏÔÊ½ÔÊÐí×Ô¶¯´´½¨£©¡£
+ä¸€è‡´æ€§è¦æ±‚ï¼š
+- å¯¹ IN/OUTï¼šå†™å…¥ txn_line åŽï¼Œå¿…é¡»åŒæ­¥æ›´æ–° stockï¼ˆæ’å…¥æˆ–æ›´æ–°å¯¹åº” part_id+locationï¼‰ã€‚
+- å¯¹ OUTï¼šå¿…é¡»æ ¡éªŒæ‰£å‡åŽä¸ä¸ºè´Ÿï¼›è‹¥è´Ÿåˆ™æ•´ç¬”äº‹åŠ¡å›žæ»šã€‚
+- å¦‚æžœæä¾› project_codeï¼šè¦èƒ½æ˜ å°„åˆ° projects.idï¼›æ‰¾ä¸åˆ°åˆ™æŠ¥é”™ï¼ˆé™¤éžæ˜¾å¼å…è®¸è‡ªåŠ¨åˆ›å»ºï¼‰ã€‚
 
-## CLI ¸ÄÔì£¨¼æÈÝ + ÐÂÔö£©
-±ØÐë±£ÁôÏÖÓÐÃüÁî£»ÐÂÔöÃüÁî½¨Òé£º
-- `stock-out`£º·ÇÏîÄ¿³ö¿â£¨--mpn --loc --qty --note£¬¿ÉÑ¡ --proj£©
-- `txn-import-xlsx`£ºµ¼Èë xlsx ½»Ò×£¨Ö§³Ö IN/OUT£¬ÇÒ project ¿É¿Õ£©
-- `txn-export-xlsx`£ºµ¼³öÄ£°å/µ¼³öÄ³¶ÎÊ±¼äÁ÷Ë®
-- `schema-export`£ºµ¼³ö schema£¨--format sql|md --out path£©
+## CLI æ”¹é€ ï¼ˆå…¼å®¹ + æ–°å¢žï¼‰
+å¿…é¡»ä¿ç•™çŽ°æœ‰å‘½ä»¤ï¼›æ–°å¢žå‘½ä»¤å»ºè®®ï¼š
+- `stock-out`ï¼šéžé¡¹ç›®å‡ºåº“ï¼ˆ--mpn --loc --qty --noteï¼Œå¯é€‰ --projï¼‰
+- `txn-import-xlsx`ï¼šå¯¼å…¥ xlsx äº¤æ˜“ï¼ˆæ”¯æŒ IN/OUTï¼Œä¸” project å¯ç©ºï¼‰
+- `txn-export-xlsx`ï¼šå¯¼å‡ºæ¨¡æ¿/å¯¼å‡ºæŸæ®µæ—¶é—´æµæ°´
+- `schema-export`ï¼šå¯¼å‡º schemaï¼ˆ--format sql|md --out pathï¼‰
 
-## XLSX Ä£°å£¨×îÐ¡¿ÉÓÃ£©
-½¨ÒéÒ»¸ö sheet£ºTransactions
-ÁÐ½¨Òé£º
+## XLSX æ¨¡æ¿ï¼ˆæœ€å°å¯ç”¨ï¼‰
+å»ºè®®ä¸€ä¸ª sheetï¼šTransactions
+åˆ—å»ºè®®ï¼š
 - txn_type (IN/OUT/ADJUST)
-- project_code (¿É¿Õ)
+- project_code (å¯ç©º)
 - mpn
 - location
-- qty (ÕýÊýÊäÈë£»ÓÉ txn_type ¾ö¶¨Õý¸º)
-- condition (¿ÉÑ¡)
+- qty (æ­£æ•°è¾“å…¥ï¼›ç”± txn_type å†³å®šæ­£è´Ÿ)
+- condition (å¯é€‰)
 - note
 
-µ¼Èë¹æÔò£º
-- ÖðÐÐÐ£Ñé£¬´íÎóÐ´µ½ ErrorReport sheet »òÊä³öÒ»¸ö .csv/.json ±¨¸æ£»
-- ÔÊÐí¡°²¿·Ö³É¹¦¡±»ò¡°È«ÓÐÈ«ÎÞ¡±¶þÑ¡Ò»£¨½¨ÒéÄ¬ÈÏÈ«ÓÐÈ«ÎÞ£¬--partial ¿É¿ªÆô²¿·Ö³É¹¦£©¡£
+å¯¼å…¥è§„åˆ™ï¼š
+- é€è¡Œæ ¡éªŒï¼Œé”™è¯¯å†™åˆ° ErrorReport sheet æˆ–è¾“å‡ºä¸€ä¸ª .csv/.json æŠ¥å‘Šï¼›
+- å…è®¸â€œéƒ¨åˆ†æˆåŠŸâ€æˆ–â€œå…¨æœ‰å…¨æ— â€äºŒé€‰ä¸€ï¼ˆå»ºè®®é»˜è®¤å…¨æœ‰å…¨æ— ï¼Œ--partial å¯å¼€å¯éƒ¨åˆ†æˆåŠŸï¼‰ã€‚
 
 ---
 
-# ? Codex ¿ÉÖ´ÐÐ Checklist£¨Öð²½Ö´ÐÐ£©
+# âœ… Codex å¯æ‰§è¡Œ Checklistï¼ˆé€æ­¥æ‰§è¡Œï¼‰
 
-## Phase 0 ¡ª »ùÏßÓëÀí½â
-- [ ] ¶ÁÈ¡ inv.py£¬ÊáÀí£ºDDL¡¢ÏÖÓÐ±í/ÊÓÍ¼/´¥·¢Æ÷¡¢ÏÖÓÐ¿â´æº¯Êý¡¢CLI ×ÓÃüÁîÓë²ÎÊý¡£
-- [ ] ÔÚ²»¸Ä´úÂëµÄÇé¿öÏÂÔËÐÐ£º
-  - [ ] `python inv.py --help`£¨È·±£¿ÉÔËÐÐ£©
-  - [ ] ÕÒÒ»¸ö¿Õ db Â·¾¶Ö´ÐÐ³õÊ¼»¯Á÷³Ì£¨Èô²Ö¿âÒÑÓÐ init ÃüÁîÔòÓÃ£»·ñÔòÔËÐÐ´¥·¢ init_db µÄÏÖÓÐÂ·¾¶£©
-- [ ] ¼ÇÂ¼µ±Ç° schema ¹Ø¼üµã£¨parts/stock/locations/projects/project_bom/project_alloc + views£©¡£
+## Phase 0 â€” åŸºçº¿ä¸Žç†è§£
+- [ ] è¯»å– inv.pyï¼Œæ¢³ç†ï¼šDDLã€çŽ°æœ‰è¡¨/è§†å›¾/è§¦å‘å™¨ã€çŽ°æœ‰åº“å­˜å‡½æ•°ã€CLI å­å‘½ä»¤ä¸Žå‚æ•°ã€‚
+- [ ] åœ¨ä¸æ”¹ä»£ç çš„æƒ…å†µä¸‹è¿è¡Œï¼š
+  - [ ] `python inv.py --help`ï¼ˆç¡®ä¿å¯è¿è¡Œï¼‰
+  - [ ] æ‰¾ä¸€ä¸ªç©º db è·¯å¾„æ‰§è¡Œåˆå§‹åŒ–æµç¨‹ï¼ˆè‹¥ä»“åº“å·²æœ‰ init å‘½ä»¤åˆ™ç”¨ï¼›å¦åˆ™è¿è¡Œè§¦å‘ init_db çš„çŽ°æœ‰è·¯å¾„ï¼‰
+- [ ] è®°å½•å½“å‰ schema å…³é”®ç‚¹ï¼ˆparts/stock/locations/projects/project_bom/project_alloc + viewsï¼‰ã€‚
 
-## Phase 1 ¡ª ÒýÈë½»Ò×Á÷Ë®±í£¨²»Ó°Ïì¾ÉÂß¼­£©
-- [ ] ÔÚ DDL ÖÐÐÂÔö inventory_txn Óë inventory_txn_line£¨ÃÝµÈ£©¡£
-- [ ] Ð´Ò»¸ö `apply_migrations(conn)`£¨»ò¸´ÓÃ init_db£©±£Ö¤¾É¿â´ò¿ªÒ²ÄÜ²¹ÆëÐÂ±í¡£
-- [ ] ÐÂÔö×îÐ¡ DAO º¯Êý£º
+## Phase 1 â€” å¼•å…¥äº¤æ˜“æµæ°´è¡¨ï¼ˆä¸å½±å“æ—§é€»è¾‘ï¼‰
+- [ ] åœ¨ DDL ä¸­æ–°å¢ž inventory_txn ä¸Ž inventory_txn_lineï¼ˆå¹‚ç­‰ï¼‰ã€‚
+- [ ] å†™ä¸€ä¸ª `apply_migrations(conn)`ï¼ˆæˆ–å¤ç”¨ init_dbï¼‰ä¿è¯æ—§åº“æ‰“å¼€ä¹Ÿèƒ½è¡¥é½æ–°è¡¨ã€‚
+- [ ] æ–°å¢žæœ€å° DAO å‡½æ•°ï¼š
   - [ ] `create_txn(conn, txn_type, project_code|None, ref, note) -> txn_id`
   - [ ] `add_txn_line(conn, txn_id, mpn, location, qty_delta, condition, note)`
-- [ ] ÓÃ SQLite ÊÂÎñ°ü¹ü£º´´½¨ txn + lines + ¸üÐÂ stock ±ØÐëÔ­×ÓÌá½»¡£
+- [ ] ç”¨ SQLite äº‹åŠ¡åŒ…è£¹ï¼šåˆ›å»º txn + lines + æ›´æ–° stock å¿…é¡»åŽŸå­æäº¤ã€‚
 
-ÑéÊÕ£º
-- [ ] ÐÂ½¨¿Õ¿â£¬ÄÜ¿´µ½ÐÂÔö±í´æÔÚ£¨Í¨¹ý sqlite_master »ò schema-export ÑéÖ¤£©¡£
+éªŒæ”¶ï¼š
+- [ ] æ–°å»ºç©ºåº“ï¼Œèƒ½çœ‹åˆ°æ–°å¢žè¡¨å­˜åœ¨ï¼ˆé€šè¿‡ sqlite_master æˆ– schema-export éªŒè¯ï¼‰ã€‚
 
-## Phase 2 ¡ª ÊµÏÖ·ÇÏîÄ¿³ö¿â + ¿ÉÑ¡ÏîÄ¿³öÈë¿â£¨ºËÐÄ£©
-- [ ] ÐÂÔö `stock-out` ×ÓÃüÁî£º
-  - [ ] ²ÎÊý£º--mpn --loc --qty(ÕýÊý) [--proj ¿ÉÑ¡] [--note]
-  - [ ] ÊµÏÖ£ºÐ´ txn (type OUT) + line(qty_delta = -qty) + ¸üÐÂ stock ¿Û¼õ
-  - [ ] Ð£Ñé£º¿â´æ²»×ãÔò±¨´í²¢»Ø¹ö
-- [ ] ¸ÄÔìÏÖÓÐ `stock-in`£º
-  - [ ] ±£³ÖÔ­¹¦ÄÜÊä³ö²»±ä
-  - [ ] ¶îÍâÐ´Èë txn(type IN)£¨project ¿ÉÑ¡£¬Ä¬ÈÏ¿Õ£©
-- [ ] ²»¸Ä reserve/release/consume µÄÒµÎñÓïÒå£¬µ«½¨ÒéÔÚ consume ³É¹¦ºó²¹Ð´ txn(type OUT, project=±ØÌî) ×÷Îª¡°ÏîÄ¿ÁìÓÃÁ÷Ë®¡±£¨¿ÉÑ¡µ«Ç¿ÁÒ½¨Òé£©¡£
+## Phase 2 â€” å®žçŽ°éžé¡¹ç›®å‡ºåº“ + å¯é€‰é¡¹ç›®å‡ºå…¥åº“ï¼ˆæ ¸å¿ƒï¼‰
+- [ ] æ–°å¢ž `stock-out` å­å‘½ä»¤ï¼š
+  - [ ] å‚æ•°ï¼š--mpn --loc --qty(æ­£æ•°) [--proj å¯é€‰] [--note]
+  - [ ] å®žçŽ°ï¼šå†™ txn (type OUT) + line(qty_delta = -qty) + æ›´æ–° stock æ‰£å‡
+  - [ ] æ ¡éªŒï¼šåº“å­˜ä¸è¶³åˆ™æŠ¥é”™å¹¶å›žæ»š
+- [ ] æ”¹é€ çŽ°æœ‰ `stock-in`ï¼š
+  - [ ] ä¿æŒåŽŸåŠŸèƒ½è¾“å‡ºä¸å˜
+  - [ ] é¢å¤–å†™å…¥ txn(type IN)ï¼ˆproject å¯é€‰ï¼Œé»˜è®¤ç©ºï¼‰
+- [ ] ä¸æ”¹ reserve/release/consume çš„ä¸šåŠ¡è¯­ä¹‰ï¼Œä½†å»ºè®®åœ¨ consume æˆåŠŸåŽè¡¥å†™ txn(type OUT, project=å¿…å¡«) ä½œä¸ºâ€œé¡¹ç›®é¢†ç”¨æµæ°´â€ï¼ˆå¯é€‰ä½†å¼ºçƒˆå»ºè®®ï¼‰ã€‚
 
-ÑéÊÕ£º
-- [ ] stock-in ºó£¬stock Ôö¼ÓÇÒ txn/line ÓÐ¼ÇÂ¼¡£
-- [ ] stock-out ºó£¬stock ¼õÉÙÇÒ txn/line ÓÐ¼ÇÂ¼¡£
-- [ ] ¿â´æ²»×ãÊ± stock-out ±ØÐëÊ§°ÜÇÒ²»ÁôÏÂ°ëÌõ txn¡£
-- [ ] reserve/consume ¾ÉÃüÁîÈÔ¿ÉÔËÐÐ£¨¼æÈÝÐÔ£©¡£
+éªŒæ”¶ï¼š
+- [ ] stock-in åŽï¼Œstock å¢žåŠ ä¸” txn/line æœ‰è®°å½•ã€‚
+- [ ] stock-out åŽï¼Œstock å‡å°‘ä¸” txn/line æœ‰è®°å½•ã€‚
+- [ ] åº“å­˜ä¸è¶³æ—¶ stock-out å¿…é¡»å¤±è´¥ä¸”ä¸ç•™ä¸‹åŠæ¡ txnã€‚
+- [ ] reserve/consume æ—§å‘½ä»¤ä»å¯è¿è¡Œï¼ˆå…¼å®¹æ€§ï¼‰ã€‚
 
-## Phase 3 ¡ª schema-export£¨µ¼³ö½á¹¹£©
-- [ ] ÐÂÔö `schema-export` ×ÓÃüÁî£º
-  - [ ] sql Ä£Ê½£ºÊä³ö `SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name;`
-  - [ ] md Ä£Ê½£º±í¸ñÁÐ³ö tables/views/indexes/triggers + ¹Ø¼ü×Ö¶Î£¨¿É´Ó PRAGMA table_info È¡£©
-- [ ] Ö§³Ö --out Êä³öµ½ÎÄ¼þ£»²»Ìá¹© --out Ôò´òÓ¡µ½ stdout¡£
+## Phase 3 â€” schema-exportï¼ˆå¯¼å‡ºç»“æž„ï¼‰
+- [ ] æ–°å¢ž `schema-export` å­å‘½ä»¤ï¼š
+  - [ ] sql æ¨¡å¼ï¼šè¾“å‡º `SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name;`
+  - [ ] md æ¨¡å¼ï¼šè¡¨æ ¼åˆ—å‡º tables/views/indexes/triggers + å…³é”®å­—æ®µï¼ˆå¯ä»Ž PRAGMA table_info å–ï¼‰
+- [ ] æ”¯æŒ --out è¾“å‡ºåˆ°æ–‡ä»¶ï¼›ä¸æä¾› --out åˆ™æ‰“å°åˆ° stdoutã€‚
 
-ÑéÊÕ£º
-- [ ] ÄÜµ¼³ö°üº¬ parts/stock/.../views/triggers µÄÍêÕû½á¹¹¡£
+éªŒæ”¶ï¼š
+- [ ] èƒ½å¯¼å‡ºåŒ…å« parts/stock/.../views/triggers çš„å®Œæ•´ç»“æž„ã€‚
 
-## Phase 4 ¡ª XLSX ½»Ò×µ¼Èë/µ¼³ö£¨¿ÉÑ¡ÏîÄ¿£©
-- [ ] ÒýÈë xlsx ¶ÁÐ´£¨openpyxl ÓÅÏÈ£»ÈôÒÑ´æÔÚÄ£°åÔò¸´ÓÃ¸ñÊ½£©¡£
-- [ ] ÐÂÔö `txn-import-xlsx`£º
-  - [ ] ¶ÁÈ¡ Transactions sheet
-  - [ ] ÖðÐÐÐ£Ñé²¢Ó³Éäµ½ txn/lines£¨½¨Òé£ºÍ¬Ò»Åúµ¼ÈëÐÎ³ÉÒ»¸ö ref Åú´ÎºÅ£©
-  - [ ] Ä¬ÈÏ¡°È«ÓÐÈ«ÎÞ¡±£¬Óö´í»Ø¹ö²¢Éú³É ErrorReport
-- [ ] ÐÂÔö `txn-export-xlsx`£º
-  - [ ] µ¼³ö¿ÕÄ£°å£¨»ò¸´ÖÆ²Ö¿âÄÚÄ£°å£©
-  - [ ] ¿ÉÑ¡µ¼³öÄ³Ê±¼ä¶ÎÁ÷Ë®µ½ xlsx£¨±ãÓÚÈË¹¤Éó¼Æ£©
+## Phase 4 â€” XLSX äº¤æ˜“å¯¼å…¥/å¯¼å‡ºï¼ˆå¯é€‰é¡¹ç›®ï¼‰
+- [ ] å¼•å…¥ xlsx è¯»å†™ï¼ˆopenpyxl ä¼˜å…ˆï¼›è‹¥å·²å­˜åœ¨æ¨¡æ¿åˆ™å¤ç”¨æ ¼å¼ï¼‰ã€‚
+- [ ] æ–°å¢ž `txn-import-xlsx`ï¼š
+  - [ ] è¯»å– Transactions sheet
+  - [ ] é€è¡Œæ ¡éªŒå¹¶æ˜ å°„åˆ° txn/linesï¼ˆå»ºè®®ï¼šåŒä¸€æ‰¹å¯¼å…¥å½¢æˆä¸€ä¸ª ref æ‰¹æ¬¡å·ï¼‰
+  - [ ] é»˜è®¤â€œå…¨æœ‰å…¨æ— â€ï¼Œé‡é”™å›žæ»šå¹¶ç”Ÿæˆ ErrorReport
+- [ ] æ–°å¢ž `txn-export-xlsx`ï¼š
+  - [ ] å¯¼å‡ºç©ºæ¨¡æ¿ï¼ˆæˆ–å¤åˆ¶ä»“åº“å†…æ¨¡æ¿ï¼‰
+  - [ ] å¯é€‰å¯¼å‡ºæŸæ—¶é—´æ®µæµæ°´åˆ° xlsxï¼ˆä¾¿äºŽäººå·¥å®¡è®¡ï¼‰
 
-ÑéÊÕ£º
-- [ ] ¸øÒ»·Ý 2 ÐÐ IN + 2 ÐÐ OUT µÄ xlsx£¬µ¼Èëºó¿â´æÓëÁ÷Ë®Ò»ÖÂ¡£
-- [ ] ´íÎóÐÐÄÜ±»Ã÷È·±¨³ö£¨ÐÐºÅ/×Ö¶Î/Ô­Òò£©¡£
+éªŒæ”¶ï¼š
+- [ ] ç»™ä¸€ä»½ 2 è¡Œ IN + 2 è¡Œ OUT çš„ xlsxï¼Œå¯¼å…¥åŽåº“å­˜ä¸Žæµæ°´ä¸€è‡´ã€‚
+- [ ] é”™è¯¯è¡Œèƒ½è¢«æ˜Žç¡®æŠ¥å‡ºï¼ˆè¡Œå·/å­—æ®µ/åŽŸå› ï¼‰ã€‚
 
-## Phase 5 ¡ª ÎÄµµÓëÊ¾Àý
-- [ ] ¸üÐÂ README£º¸ø³ö 3 ¸ö×î³£ÓÃÁ÷³Ì£º
-  - [ ] ·ÇÏîÄ¿Èë¿â/³ö¿â£¨stock-in/stock-out£©
-  - [ ] ÏîÄ¿Á÷³Ì£¨proj-new¡¢bom-set¡¢reserve¡¢consume£©
-  - [ ] XLSX ÅúÁ¿µ¼Èë
-- [ ] ¸ø³ö¡°µ¼³ö schema¡±ÓÃ·¨Ê¾ÀýÓëÊä³öÊ¾ÀýÆ¬¶Î¡£
+## Phase 5 â€” æ–‡æ¡£ä¸Žç¤ºä¾‹
+- [ ] æ›´æ–° READMEï¼šç»™å‡º 3 ä¸ªæœ€å¸¸ç”¨æµç¨‹ï¼š
+  - [ ] éžé¡¹ç›®å…¥åº“/å‡ºåº“ï¼ˆstock-in/stock-outï¼‰
+  - [ ] é¡¹ç›®æµç¨‹ï¼ˆproj-newã€bom-setã€reserveã€consumeï¼‰
+  - [ ] XLSX æ‰¹é‡å¯¼å…¥
+- [ ] ç»™å‡ºâ€œå¯¼å‡º schemaâ€ç”¨æ³•ç¤ºä¾‹ä¸Žè¾“å‡ºç¤ºä¾‹ç‰‡æ®µã€‚
 
 ---
 
-## ×îÖÕÑéÊÕ±ê×¼£¨Definition of Done£©
-- [ ] ¾É¿â¿ÉÖ±½Ó´ò¿ª²¢×Ô¶¯²¹ÆëÐÂ±í£¨²»ÐèÒªÊÖ¹¤Ç¨ÒÆ£©¡£
-- [ ] ÏÖÓÐÃüÁî²»¸ÄÃû²»Ê§Ð§£»ÐÂÔöÃüÁî¿ÉÓÃ¡£
-- [ ] ÈÎºÎÒ»´ÎÈë/³ö¿â¶¼ÄÜÔÚÁ÷Ë®±í×·ËÝµ½£ºÊ±¼ä¡¢ÊýÁ¿¡¢¿âÎ»¡¢£¨¿ÉÑ¡£©ÏîÄ¿¡£
-- [ ] schema-export Êä³ö°üº¬ËùÓÐ±í/Ë÷Òý/ÊÓÍ¼/´¥·¢Æ÷¡£
-- [ ] XLSX µ¼ÈëÄÜÎÈ¶¨¹¤×÷²¢¸ø³ö¿É¶Á´íÎó±¨¸æ¡£
+## æœ€ç»ˆéªŒæ”¶æ ‡å‡†ï¼ˆDefinition of Doneï¼‰
+- [ ] æ—§åº“å¯ç›´æŽ¥æ‰“å¼€å¹¶è‡ªåŠ¨è¡¥é½æ–°è¡¨ï¼ˆä¸éœ€è¦æ‰‹å·¥è¿ç§»ï¼‰ã€‚
+- [ ] çŽ°æœ‰å‘½ä»¤ä¸æ”¹åä¸å¤±æ•ˆï¼›æ–°å¢žå‘½ä»¤å¯ç”¨ã€‚
+- [ ] ä»»ä½•ä¸€æ¬¡å…¥/å‡ºåº“éƒ½èƒ½åœ¨æµæ°´è¡¨è¿½æº¯åˆ°ï¼šæ—¶é—´ã€æ•°é‡ã€åº“ä½ã€ï¼ˆå¯é€‰ï¼‰é¡¹ç›®ã€‚
+- [ ] schema-export è¾“å‡ºåŒ…å«æ‰€æœ‰è¡¨/ç´¢å¼•/è§†å›¾/è§¦å‘å™¨ã€‚
+- [ ] XLSX å¯¼å…¥èƒ½ç¨³å®šå·¥ä½œå¹¶ç»™å‡ºå¯è¯»é”™è¯¯æŠ¥å‘Šã€‚

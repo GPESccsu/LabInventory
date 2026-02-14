@@ -1,39 +1,39 @@
-# AGENTS.md ¡ª LabInventory (SQLite) ÔªÆ÷¼ş¹ÜÀí
+# AGENTS.md â€” LabInventory (SQLite) å…ƒå™¨ä»¶ç®¡ç†
 
-## Ä¿±ê
-°Ñµ±Ç°²Ö¿âÉı¼¶Îª¡°µç×ÓÔª¼ş¿â´æ + ³öÈë¿âÁ÷Ë® + ¿ÉÑ¡ÏîÄ¿¹é¼¯ + XLSX ½»»¥¡±µÄÏµÍ³£º
-- **×Ü¿â´æ**£º°´ part + location Î¬¶ÈÎ¬»¤¿â´æ£¨ÏÖÓĞ stock ±í£©¡£
-- **³öÈë¿â**£º±ØĞë¿É¼ÇÂ¼ÎªÁ÷Ë®£»³ö/Èë¿â¿ÉÒÔ **´øÏîÄ¿**£¬Ò²¿ÉÒÔ **²»´øÏîÄ¿**£¨¿ÉÑ¡£©¡£
-- **¼æÈİĞÔ**£º±£³ÖÏÖÓĞ CLI ×ÓÃüÁî¿ÉÓÃ£¬±ÜÃâÆÆ»µ¼ÈÓĞÊı¾İ¿âÓë½Å±¾ĞĞÎª¡£
+## ç›®æ ‡
+æŠŠå½“å‰ä»“åº“å‡çº§ä¸ºâ€œç”µå­å…ƒä»¶åº“å­˜ + å‡ºå…¥åº“æµæ°´ + å¯é€‰é¡¹ç›®å½’é›† + XLSX äº¤äº’â€çš„ç³»ç»Ÿï¼š
+- **æ€»åº“å­˜**ï¼šæŒ‰ part + location ç»´åº¦ç»´æŠ¤åº“å­˜ï¼ˆç°æœ‰ stock è¡¨ï¼‰ã€‚
+- **å‡ºå…¥åº“**ï¼šå¿…é¡»å¯è®°å½•ä¸ºæµæ°´ï¼›å‡º/å…¥åº“å¯ä»¥ **å¸¦é¡¹ç›®**ï¼Œä¹Ÿå¯ä»¥ **ä¸å¸¦é¡¹ç›®**ï¼ˆå¯é€‰ï¼‰ã€‚
+- **å…¼å®¹æ€§**ï¼šä¿æŒç°æœ‰ CLI å­å‘½ä»¤å¯ç”¨ï¼Œé¿å…ç ´åæ—¢æœ‰æ•°æ®åº“ä¸è„šæœ¬è¡Œä¸ºã€‚
 
-> µ±Ç° inv.py ÒÑ°üº¬ºËĞÄ±í½á¹¹ÓëÏîÄ¿Ô¤Áô/ÏûºÄÁ÷³Ì£¨DDL ÔÚ DDL ×Ö·û´®Àï£©¡£:contentReference[oaicite:1]{index=1}  
-> ÒÑÓĞÏîÄ¿Ïà¹Ø±í£ºprojects / proj:contentReference[oaicite:2]{index=2}Ô¤Áô¡±µÄ´¥·¢Æ÷ÓëÏîÄ¿ÎïÁÏ×´Ì¬ÊÓÍ¼¡£:contentReference[oaicite:3]{index=3} :contentReference[oaicite:4]{index=4} :contentReference[oaicite:5]{index=5}¡¢:contentReference[oaicite:6]{index=6}×ÓÃüÁî¡£:contentReference[oaicite:7]{index=7} :contentReference[oaicite:8]{index=8}:contentReference[oaicite:9]{index=9} :contentReference[oaicite:10]{index=10}£¬ÓÈÆäÊÇ DDL¡¢¿â´æº¯Êı¡¢CLI Èë¿Ú main()¡£
-- **Ğ¡²½Ìá½»**£ºÃ¿Ò»²½¸Ä¶¯¶¼ÒªÄÜÔËĞĞ£¨ÖÁÉÙ `python inv.py --help` ²»±¨´í£©¡£
-- **Êı¾İ¿âÇ¨ÒÆ**£ºÈôĞÂÔö±í/ÊÓÍ¼/´¥·¢Æ÷£¬±ØĞëÊÇÃİµÈ£¨`IF NOT EXISTS`£©£¬²¢Ìá¹©Ç¨ÒÆÂ·¾¶£¨¾É¿â´ò¿ªºó×Ô¶¯²¹Æë£©¡£
-- **²»ÒªÉ¾±í**£ºÏÖÓĞ tables/views/commands ²»É¾³ı²»¸ÄÃû£»Ö»ÄÜĞÂÔö»ò¼æÈİÊ½À©Õ¹¡£
+> å½“å‰ inv.py å·²åŒ…å«æ ¸å¿ƒè¡¨ç»“æ„ä¸é¡¹ç›®é¢„ç•™/æ¶ˆè€—æµç¨‹ï¼ˆDDL åœ¨ DDL å­—ç¬¦ä¸²é‡Œï¼‰ã€‚:contentReference[oaicite:1]{index=1}  
+> å·²æœ‰é¡¹ç›®ç›¸å…³è¡¨ï¼šprojects / proj:contentReference[oaicite:2]{index=2}é¢„ç•™â€çš„è§¦å‘å™¨ä¸é¡¹ç›®ç‰©æ–™çŠ¶æ€è§†å›¾ã€‚:contentReference[oaicite:3]{index=3} :contentReference[oaicite:4]{index=4} :contentReference[oaicite:5]{index=5}ã€:contentReference[oaicite:6]{index=6}å­å‘½ä»¤ã€‚:contentReference[oaicite:7]{index=7} :contentReference[oaicite:8]{index=8}:contentReference[oaicite:9]{index=9} :contentReference[oaicite:10]{index=10}ï¼Œå°¤å…¶æ˜¯ DDLã€åº“å­˜å‡½æ•°ã€CLI å…¥å£ main()ã€‚
+- **å°æ­¥æäº¤**ï¼šæ¯ä¸€æ­¥æ”¹åŠ¨éƒ½è¦èƒ½è¿è¡Œï¼ˆè‡³å°‘ `python inv.py --help` ä¸æŠ¥é”™ï¼‰ã€‚
+- **æ•°æ®åº“è¿ç§»**ï¼šè‹¥æ–°å¢è¡¨/è§†å›¾/è§¦å‘å™¨ï¼Œå¿…é¡»æ˜¯å¹‚ç­‰ï¼ˆ`IF NOT EXISTS`ï¼‰ï¼Œå¹¶æä¾›è¿ç§»è·¯å¾„ï¼ˆæ—§åº“æ‰“å¼€åè‡ªåŠ¨è¡¥é½ï¼‰ã€‚
+- **ä¸è¦åˆ è¡¨**ï¼šç°æœ‰ tables/views/commands ä¸åˆ é™¤ä¸æ”¹åï¼›åªèƒ½æ–°å¢æˆ–å…¼å®¹å¼æ‰©å±•ã€‚
 
-### 1. ¼æÈİĞÔºìÏß£¨²»ĞíÆÆ»µ£©
-- ±£Áô `--db` ²ÎÊıÓëËùÓĞÏÖÓĞ×ÓÃüÁîÃû³Æ/²ÎÊı£¨ÀıÈç stock-in¡¢proj-new¡¢bom-set¡¢reserve¡¢release¡¢consume¡¢proj-status¡¢proj-alloc¡¢proj-forms£©¡£:contentReference[oaicite:11]{index=11}
-- ±£Áô Windows Â·¾¶¼æÈİÂß¼­£¨resolve_:contentReference[oaicite:12]{index=12}ath£©¡£:contentReference[oaicite:13]{index=13}
-- `DDL` ±ØĞë¼ÌĞø×÷Îª¡°init_db ÃİµÈ³õÊ¼»¯:contentReference[oaicite:14]{index=14}:contentReference[oaicite:15]{index=15} :contentReference[oaicite:16]{index=16}:contentReference[oaicite:17]{index=17} :contentReference[oaicite:18]{index=18}txn / stock_ledger£©£¬Ö§³Ö£º
+### 1. å…¼å®¹æ€§çº¢çº¿ï¼ˆä¸è®¸ç ´åï¼‰
+- ä¿ç•™ `--db` å‚æ•°ä¸æ‰€æœ‰ç°æœ‰å­å‘½ä»¤åç§°/å‚æ•°ï¼ˆä¾‹å¦‚ stock-inã€proj-newã€bom-setã€reserveã€releaseã€consumeã€proj-statusã€proj-allocã€proj-formsï¼‰ã€‚:contentReference[oaicite:11]{index=11}
+- ä¿ç•™ Windows è·¯å¾„å…¼å®¹é€»è¾‘ï¼ˆresolve_:contentReference[oaicite:12]{index=12}athï¼‰ã€‚:contentReference[oaicite:13]{index=13}
+- `DDL` å¿…é¡»ç»§ç»­ä½œä¸ºâ€œinit_db å¹‚ç­‰åˆå§‹åŒ–:contentReference[oaicite:14]{index=14}:contentReference[oaicite:15]{index=15} :contentReference[oaicite:16]{index=16}:contentReference[oaicite:17]{index=17} :contentReference[oaicite:18]{index=18}txn / stock_ledgerï¼‰ï¼Œæ”¯æŒï¼š
   - txn_type: IN / OUT / ADJUST
-  - ¿ÉÑ¡ project_id£¨Îª¿Õ±íÊ¾²»´øÏîÄ¿£©
-  - ¼ÇÂ¼ mpn/part_id¡¢location¡¢qty¡¢note¡¢created_at¡¢operator£¨¿ÉÑ¡£©
-- ĞÂÔö **·ÇÏîÄ¿³ö¿â**£ºÀıÈç `stock-out` ×ÓÃüÁî£¨²»ÒÀÀµ project_alloc£©¡£
-- Ìá¹© **µ¼³öÊı¾İ¿â½á¹¹£¨schema£©** µÄ×ÓÃüÁî£ºÀıÈç `schema-export`£¨Êä³ö .sql »ò .md£©£¬¸²¸ÇËùÓĞ±í/Ë÷Òı/ÊÓÍ¼/´¥·¢Æ÷¡£
+  - å¯é€‰ project_idï¼ˆä¸ºç©ºè¡¨ç¤ºä¸å¸¦é¡¹ç›®ï¼‰
+  - è®°å½• mpn/part_idã€locationã€qtyã€noteã€created_atã€operatorï¼ˆå¯é€‰ï¼‰
+- æ–°å¢ **éé¡¹ç›®å‡ºåº“**ï¼šä¾‹å¦‚ `stock-out` å­å‘½ä»¤ï¼ˆä¸ä¾èµ– project_allocï¼‰ã€‚
+- æä¾› **å¯¼å‡ºæ•°æ®åº“ç»“æ„ï¼ˆschemaï¼‰** çš„å­å‘½ä»¤ï¼šä¾‹å¦‚ `schema-export`ï¼ˆè¾“å‡º .sql æˆ– .mdï¼‰ï¼Œè¦†ç›–æ‰€æœ‰è¡¨/ç´¢å¼•/è§†å›¾/è§¦å‘å™¨ã€‚
 
-P1£¨Ç¿ÁÒ½¨Òé£©
-- XLSX ½»»¥£ºÓÃÒ»¸ö¹Ì¶¨¸ñÊ½µÄ xlsx Ä£°å×öÅúÁ¿Èë¿â/³ö¿â£¨¿ÉÑ¡ project_code£©£¬²¢Ìá¹©µ¼ÈëĞ£ÑéÓë´íÎó±¨¸æ¡£
-- Ôö¼Ó²éÑ¯/±¨±í£º°´ÏîÄ¿¡¢°´¿âÎ»¡¢°´ MPN µÄ¿â´æÓëÁ÷Ë®»ã×ÜÊÓÍ¼/µ¼³ö¡£
+P1ï¼ˆå¼ºçƒˆå»ºè®®ï¼‰
+- XLSX äº¤äº’ï¼šç”¨ä¸€ä¸ªå›ºå®šæ ¼å¼çš„ xlsx æ¨¡æ¿åšæ‰¹é‡å…¥åº“/å‡ºåº“ï¼ˆå¯é€‰ project_codeï¼‰ï¼Œå¹¶æä¾›å¯¼å…¥æ ¡éªŒä¸é”™è¯¯æŠ¥å‘Šã€‚
+- å¢åŠ æŸ¥è¯¢/æŠ¥è¡¨ï¼šæŒ‰é¡¹ç›®ã€æŒ‰åº“ä½ã€æŒ‰ MPN çš„åº“å­˜ä¸æµæ°´æ±‡æ€»è§†å›¾/å¯¼å‡ºã€‚
 
-P2£¨¿ÉÑ¡£©
-- ²Ù×÷Ô±¡¢ÉóÅú¡¢Åú´Î¡¢¹©Ó¦ÉÌµÈ×Ö¶ÎÀ©Õ¹¡£
+P2ï¼ˆå¯é€‰ï¼‰
+- æ“ä½œå‘˜ã€å®¡æ‰¹ã€æ‰¹æ¬¡ã€ä¾›åº”å•†ç­‰å­—æ®µæ‰©å±•ã€‚
 
-### 3. ¹¤¾ßÓëÒÀÀµ
-- Python ±ê×¼¿âÓÅÏÈ£»Èô±ØĞëĞÂÔöÒÀÀµ£¬Ğè¸ø³ö°²×°ËµÃ÷Óë×îĞ¡»¯ÒÀÀµÀíÓÉ¡£
-- SQLite ÎªÎ¨Ò»Êı¾İ¿â£»ÓÅÏÈÊ¹ÓÃ SQL Ô¼Êø/´¥·¢Æ÷×öÒ»ÖÂĞÔ±£»¤£¬Python ×öÒµÎñ±àÅÅ¡£
+### 3. å·¥å…·ä¸ä¾èµ–
+- Python æ ‡å‡†åº“ä¼˜å…ˆï¼›è‹¥å¿…é¡»æ–°å¢ä¾èµ–ï¼Œéœ€ç»™å‡ºå®‰è£…è¯´æ˜ä¸æœ€å°åŒ–ä¾èµ–ç†ç”±ã€‚
+- SQLite ä¸ºå”¯ä¸€æ•°æ®åº“ï¼›ä¼˜å…ˆä½¿ç”¨ SQL çº¦æŸ/è§¦å‘å™¨åšä¸€è‡´æ€§ä¿æŠ¤ï¼ŒPython åšä¸šåŠ¡ç¼–æ’ã€‚
 
-### 4. ½»¸¶Îï
-- ¸üĞÂºóµÄ inv.py£¨»ò²ğ·ÖÎª package£¬µ« inv.py CLI ±ØĞëÈÔ¿É×÷ÎªÈë¿Ú£©¡£
-- ĞÂÔö/¸üĞÂ£ºPLAN.md£¨±¾´ÎÖ´ĞĞ¼Æ»®ÂäµØ£©¡¢README/Ê¹ÓÃËµÃ÷£¨¼ò¶Ì¼´¿É£©¡£
-- XLSX Ä£°åÓëÊ¾Àı£¨ÈôÊµÏÖ XLSX Á÷³Ì£©¡£
+### 4. äº¤ä»˜ç‰©
+- æ›´æ–°åçš„ inv.pyï¼ˆæˆ–æ‹†åˆ†ä¸º packageï¼Œä½† inv.py CLI å¿…é¡»ä»å¯ä½œä¸ºå…¥å£ï¼‰ã€‚
+- æ–°å¢/æ›´æ–°ï¼šPLAN.mdï¼ˆæœ¬æ¬¡æ‰§è¡Œè®¡åˆ’è½åœ°ï¼‰ã€README/ä½¿ç”¨è¯´æ˜ï¼ˆç®€çŸ­å³å¯ï¼‰ã€‚
+- XLSX æ¨¡æ¿ä¸ç¤ºä¾‹ï¼ˆè‹¥å®ç° XLSX æµç¨‹ï¼‰ã€‚
