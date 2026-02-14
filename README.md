@@ -85,68 +85,33 @@ python inv.py --db ./lab_inventory.db txn-import-xlsx --xlsx ./out/txn_template.
 
 ### 2.1 可直接运行：基于 XLSX 的入库 + 出库完整示例
 
-> 下面这组命令可以直接复制执行，演示“先批量入库，再批量出库（可带项目）”。
+> 下面这组命令都是命令行执行（不含 Python 内联脚本），演示“先批量入库，再批量出库（可带项目）”。
 
 ```bash
 # 0) 准备一个全新数据库文件
 mkdir -p ./out
-python - <<'PY'
-import sqlite3
-sqlite3.connect('./out/xlsx_demo.db').close()
-print('db ready')
-PY
+sqlite3 ./out/xlsx_demo.db '.databases'
 
 # 1) 初始化库位
 python inv.py --db ./out/xlsx_demo.db init-locations --room T2 --g01-shelves 1 --g02-shelves 0 --positions 1
 
 # 2) 预置一个物料和一个项目（用于演示可选 project_code）
-python - <<'PY'
-from pathlib import Path
-from app.inv import connect, init_db, upsert_part, create_project
-conn = connect(Path('./out/xlsx_demo.db'))
-init_db(conn)
-upsert_part(conn, 'MPN-X1', 'Demo Part', 'IC', 'SOT23', '', '', '', 'xlsx demo part')
-create_project(conn, 'PJ-001', 'Demo Project', '', 'xlsx demo')
-conn.commit()
-conn.close()
-print('seed ok')
-PY
+sqlite3 ./out/xlsx_demo.db "INSERT OR IGNORE INTO parts(mpn,name,category,package,params,url,datasheet,note) VALUES('MPN-X1','Demo Part','IC','SOT23','','','','xlsx demo part');"
+sqlite3 ./out/xlsx_demo.db "INSERT OR IGNORE INTO projects(code,name,owner,note) VALUES('PJ-001','Demo Project','','xlsx demo');"
 
-# 3) 生成一个 StockIn + StockOut 的示例 xlsx
-python - <<'PY'
-from openpyxl import Workbook
-wb = Workbook()
+# 3) 导出模板 xlsx（包含 Transactions / StockIn / StockOut 三个 sheet）
+python inv.py --db ./out/xlsx_demo.db txn-export-xlsx --out ./out/stockio_demo.xlsx
 
-ws_in = wb.active
-ws_in.title = 'StockIn'
-ws_in.append(['project_code','mpn','location','qty','condition','note','ref','operator'])
-ws_in.append(['', 'MPN-X1', 'T2-G01-S01-P01', 5, 'new', '批量入库', 'BATCH-001', 'alice'])
+# 4) 用 Excel/WPS 打开 ./out/stockio_demo.xlsx，按下面内容填写后保存：
+# StockIn:  project_code='',     mpn='MPN-X1', location='T2-G01-S01-P01', qty=5, condition='new', note='批量入库', ref='BATCH-001', operator='alice'
+# StockOut: project_code='PJ-001', mpn='MPN-X1', location='T2-G01-S01-P01', qty=2, note='项目领用', ref='BATCH-001', operator='alice'
 
-ws_out = wb.create_sheet('StockOut')
-ws_out.append(['project_code','mpn','location','qty','note','ref','operator'])
-ws_out.append(['PJ-001', 'MPN-X1', 'T2-G01-S01-P01', 2, '项目领用', 'BATCH-001', 'alice'])
-
-wb.save('./out/stockio_demo.xlsx')
-print('xlsx ready')
-PY
-
-# 4) 导入 xlsx（使用分表模式）
+# 5) 导入 xlsx（使用分表模式）
 python inv.py --db ./out/xlsx_demo.db txn-import-xlsx --xlsx ./out/stockio_demo.xlsx --mode stock-io --error-out ./out/stockio_demo_errors.json
 
-# 5) 验证库存与流水（预期：库存 3，至少 2 条交易）
-python - <<'PY'
-import sqlite3
-conn = sqlite3.connect('./out/xlsx_demo.db')
-qty = conn.execute("""
-SELECT s.qty
-FROM stock s JOIN parts p ON p.id=s.part_id
-WHERE p.mpn='MPN-X1' AND s.location='T2-G01-S01-P01'
-""").fetchone()[0]
-txn_cnt = conn.execute("SELECT COUNT(*) FROM inventory_txn").fetchone()[0]
-print('qty=', qty)
-print('inventory_txn.count=', txn_cnt)
-conn.close()
-PY
+# 6) 验证库存与流水（预期：库存=3，且至少2条交易）
+sqlite3 ./out/xlsx_demo.db "SELECT s.qty FROM stock s JOIN parts p ON p.id=s.part_id WHERE p.mpn='MPN-X1' AND s.location='T2-G01-S01-P01';"
+sqlite3 ./out/xlsx_demo.db "SELECT COUNT(*) FROM inventory_txn;"
 ```
 
 如果你更习惯单表，也可以改用 `Transactions` sheet 并使用：
