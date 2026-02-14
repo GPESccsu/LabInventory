@@ -49,6 +49,10 @@ python inv.py --db ./lab_inventory.db lcsc \
 python inv.py --db ./lab_inventory.db stock-in \
   --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 20
 
+# 兼容历史脚本：stock-in 的 --qty 允许 0/负数（负数等价于同库位出库）
+python inv.py --db ./lab_inventory.db stock-in \
+  --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty -3
+
 # 出库（可选关联项目）
 python inv.py --db ./lab_inventory.db stock-out \
   --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 5 --proj PJ-001
