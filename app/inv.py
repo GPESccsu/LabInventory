@@ -153,6 +153,37 @@ CREATE INDEX IF NOT EXISTS idx_alloc_project ON project_alloc(project_id);
 CREATE INDEX IF NOT EXISTS idx_alloc_part    ON project_alloc(part_id);
 CREATE INDEX IF NOT EXISTS idx_alloc_loc     ON project_alloc(location);
 
+CREATE TABLE IF NOT EXISTS inv_doc (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_type      TEXT NOT NULL CHECK(doc_type IN ('IN','OUT','MOVE','ADJUST','CONSUME','RESERVE','RELEASE')),
+  project_id    INTEGER,
+  from_location TEXT,
+  to_location   TEXT,
+  ref           TEXT,
+  operator      TEXT,
+  note          TEXT,
+  alloc_id      INTEGER,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+  FOREIGN KEY (alloc_id) REFERENCES project_alloc(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inv_doc_project ON inv_doc(project_id);
+CREATE INDEX IF NOT EXISTS idx_inv_doc_created ON inv_doc(created_at);
+CREATE INDEX IF NOT EXISTS idx_inv_doc_type    ON inv_doc(doc_type);
+
+CREATE TABLE IF NOT EXISTS inv_line (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_id        INTEGER NOT NULL,
+  part_id       INTEGER NOT NULL,
+  qty           INTEGER NOT NULL CHECK(qty > 0),
+  unit_cost     REAL,
+  note          TEXT,
+  FOREIGN KEY (doc_id) REFERENCES inv_doc(id) ON DELETE CASCADE,
+  FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_inv_line_doc  ON inv_line(doc_id);
+CREATE INDEX IF NOT EXISTS idx_inv_line_part ON inv_line(part_id);
+
 -- 位置合法性（location 不为空时必须存在）
 CREATE TRIGGER IF NOT EXISTS trg_alloc_location_check
 BEFORE INSERT ON project_alloc
@@ -541,6 +572,64 @@ def get_part_id_by_mpn(conn, mpn: str) -> int:
     return int(r["id"])
 
 
+def get_project_id_optional(conn, code: str = "") -> int | None:
+    code = clean_text(code)
+    if not code:
+        return None
+    return get_project_id(conn, code)
+
+
+def assert_location_exists(conn, location: str):
+    if conn.execute("SELECT 1 FROM locations WHERE location=?", (location,)).fetchone() is None:
+        raise RuntimeError(f"库位不存在（locations 表里没有）：{location}")
+
+
+def _tx_begin(conn, tx_name: str = "inv_tx"):
+    conn.execute(f"SAVEPOINT {tx_name};")
+
+
+def _tx_commit(conn, tx_name: str = "inv_tx"):
+    conn.execute(f"RELEASE SAVEPOINT {tx_name};")
+
+
+def _tx_rollback(conn, tx_name: str = "inv_tx"):
+    conn.execute(f"ROLLBACK TO SAVEPOINT {tx_name};")
+    conn.execute(f"RELEASE SAVEPOINT {tx_name};")
+
+
+def write_ledger(
+    conn,
+    *,
+    doc_type: str,
+    part_id: int,
+    qty: int,
+    project_id: int | None = None,
+    from_location: str | None = None,
+    to_location: str | None = None,
+    ref: str = "",
+    operator: str = "",
+    note: str = "",
+    alloc_id: int | None = None,
+    unit_cost: float | None = None,
+    line_note: str = "",
+) -> int:
+    if qty <= 0:
+        raise RuntimeError("ledger qty 必须为正整数")
+    cur = conn.execute(
+        """
+        INSERT INTO inv_doc (doc_type, project_id, from_location, to_location, ref, operator, note, alloc_id)
+        VALUES (?,?,?,?,?,?,?,?)
+        """,
+        (doc_type, project_id, from_location, to_location, ref, operator, note, alloc_id),
+    )
+    doc_id = int(cur.lastrowid)
+    conn.execute(
+        "INSERT INTO inv_line (doc_id, part_id, qty, unit_cost, note) VALUES (?,?,?,?,?)",
+        (doc_id, part_id, qty, unit_cost, line_note or None),
+    )
+    return doc_id
+
+
 def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: str, url: str, datasheet: str, note: str) -> int:
     row = conn.execute("SELECT id FROM parts WHERE mpn=?", (mpn,)).fetchone()
     if row:
@@ -567,22 +656,194 @@ def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: 
     return int(cur.lastrowid)
 
 
+def stock_in(
+    conn,
+    mpn: str,
+    location: str,
+    qty: int,
+    condition: str = "new",
+    note: str = "",
+    project_code: str = "",
+    ref: str = "",
+    operator: str = "",
+):
+    if qty <= 0:
+        raise RuntimeError("入库数量必须为正整数")
+    assert_location_exists(conn, location)
+    part_id = get_part_id_by_mpn(conn, mpn)
+    project_id = get_project_id_optional(conn, project_code)
+    _tx_begin(conn)
+    try:
+        row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE stock SET qty=?, updated_at=datetime('now','localtime'), condition=?, note=? WHERE id=?",
+                (int(row["qty"]) + qty, condition, note, int(row["id"])),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
+                (part_id, location, qty, condition, note),
+            )
+        write_ledger(
+            conn,
+            doc_type="IN",
+            part_id=part_id,
+            qty=qty,
+            project_id=project_id,
+            to_location=location,
+            ref=ref,
+            operator=operator,
+            note=note,
+        )
+        _tx_commit(conn)
+    except Exception:
+        _tx_rollback(conn)
+        raise
+
+
 def add_stock(conn, mpn: str, location: str, qty: int, condition: str = "new", note: str = ""):
-    # location 合法性
-    if conn.execute("SELECT 1 FROM locations WHERE location=?", (location,)).fetchone() is None:
-        raise RuntimeError(f"库位不存在（locations 表里没有）：{location}")
+    # 兼容旧接口：默认作为入库处理，并同步写入 ledger(IN)
+    stock_in(conn, mpn, location, qty, condition=condition, note=note)
+
+
+def stock_out(conn, mpn: str, location: str, qty: int, project_code: str = "", ref: str = "", note: str = "", operator: str = ""):
+    if qty <= 0:
+        raise RuntimeError("出库数量必须为正整数")
+    assert_location_exists(conn, location)
+    part_id = get_part_id_by_mpn(conn, mpn)
+    project_id = get_project_id_optional(conn, project_code)
+    row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
+    if not row:
+        raise RuntimeError(f"stock 中找不到该库位记录：part_id={part_id}, location={location}")
+    if int(row["qty"]) < qty:
+        raise RuntimeError(f"扣减失败：库位库存不足（stock={int(row['qty'])} < out={qty}）")
+    _tx_begin(conn)
+    try:
+        conn.execute(
+            "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
+            (qty, note, int(row["id"])),
+        )
+        write_ledger(
+            conn,
+            doc_type="OUT",
+            part_id=part_id,
+            qty=qty,
+            project_id=project_id,
+            from_location=location,
+            ref=ref,
+            operator=operator,
+            note=note,
+        )
+        _tx_commit(conn)
+    except Exception:
+        _tx_rollback(conn)
+        raise
+
+
+def stock_move(conn, mpn: str, from_location: str, to_location: str, qty: int, note: str = "", operator: str = ""):
+    if qty <= 0:
+        raise RuntimeError("移库数量必须为正整数")
+    if from_location == to_location:
+        raise RuntimeError("from/to 不能相同")
+    assert_location_exists(conn, from_location)
+    assert_location_exists(conn, to_location)
+    part_id = get_part_id_by_mpn(conn, mpn)
+    src = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, from_location)).fetchone()
+    if not src:
+        raise RuntimeError(f"源库位无库存记录：part_id={part_id}, location={from_location}")
+    if int(src["qty"]) < qty:
+        raise RuntimeError(f"移库失败：源库位库存不足（stock={int(src['qty'])} < move={qty}）")
+    _tx_begin(conn)
+    try:
+        conn.execute(
+            "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime') WHERE id=?",
+            (qty, int(src["id"])),
+        )
+        dst = conn.execute("SELECT id, qty, condition FROM stock WHERE part_id=? AND location=?", (part_id, to_location)).fetchone()
+        if dst:
+            conn.execute(
+                "UPDATE stock SET qty=qty+?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
+                (qty, note, int(dst["id"])),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
+                (part_id, to_location, qty, "new", note),
+            )
+        write_ledger(
+            conn,
+            doc_type="MOVE",
+            part_id=part_id,
+            qty=qty,
+            from_location=from_location,
+            to_location=to_location,
+            operator=operator,
+            note=note,
+        )
+        _tx_commit(conn)
+    except Exception:
+        _tx_rollback(conn)
+        raise
+
+
+def stock_adjust(
+    conn,
+    mpn: str,
+    location: str,
+    add_qty: int = 0,
+    sub_qty: int = 0,
+    note: str = "",
+    ref: str = "",
+    operator: str = "",
+):
+    if bool(add_qty > 0) == bool(sub_qty > 0):
+        raise RuntimeError("stock-adjust 必须且只能指定 --add 或 --sub")
+    if not clean_text(note):
+        raise RuntimeError("stock-adjust 必须提供 --note")
+    assert_location_exists(conn, location)
     part_id = get_part_id_by_mpn(conn, mpn)
     row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
-    if row:
-        conn.execute(
-            "UPDATE stock SET qty=?, updated_at=datetime('now','localtime'), condition=?, note=? WHERE id=?",
-            (int(row["qty"]) + qty, condition, note, int(row["id"])),
+    _tx_begin(conn)
+    try:
+        if add_qty > 0:
+            if row:
+                conn.execute(
+                    "UPDATE stock SET qty=qty+?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
+                    (add_qty, note, int(row["id"])),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
+                    (part_id, location, add_qty, "new", note),
+                )
+            qty = add_qty
+        else:
+            if not row:
+                raise RuntimeError(f"stock 中找不到该库位记录：part_id={part_id}, location={location}")
+            if int(row["qty"]) < sub_qty:
+                raise RuntimeError(f"调整失败：库位库存不足（stock={int(row['qty'])} < sub={sub_qty}）")
+            conn.execute(
+                "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
+                (sub_qty, note, int(row["id"])),
+            )
+            qty = sub_qty
+        write_ledger(
+            conn,
+            doc_type="ADJUST",
+            part_id=part_id,
+            qty=qty,
+            from_location=location if sub_qty > 0 else None,
+            to_location=location if add_qty > 0 else None,
+            ref=ref,
+            operator=operator,
+            note=note,
+            line_note=("add" if add_qty > 0 else "sub"),
         )
-    else:
-        conn.execute(
-            "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
-            (part_id, location, qty, condition, note),
-        )
+        _tx_commit(conn)
+    except Exception:
+        _tx_rollback(conn)
+        raise
 
 
 def create_project(conn, code: str, name: str, owner: str = "", note: str = ""):
@@ -623,16 +884,37 @@ def reserve_loc(conn, project_code: str, mpn: str, location: str, qty: int, note
         "INSERT INTO project_alloc (project_id, part_id, location, alloc_qty, status, note, updated_at) VALUES (?,?,?,?, 'reserved', ?, datetime('now','localtime'))",
         (pid, part_id, location, qty, note),
     )
-    return int(cur.lastrowid)
+    alloc_id = int(cur.lastrowid)
+    write_ledger(
+        conn,
+        doc_type="RESERVE",
+        part_id=part_id,
+        qty=qty,
+        project_id=pid,
+        to_location=location,
+        note=note,
+        alloc_id=alloc_id,
+    )
+    return alloc_id
 
 
 def release_alloc(conn, alloc_id: int, note_append: str = "释放"):
-    row = conn.execute("SELECT status FROM project_alloc WHERE id=?", (alloc_id,)).fetchone()
+    row = conn.execute("SELECT project_id, part_id, location, alloc_qty, status FROM project_alloc WHERE id=?", (alloc_id,)).fetchone()
     if not row:
         raise RuntimeError(f"alloc_id 不存在：{alloc_id}")
     conn.execute(
         "UPDATE project_alloc SET status='released', updated_at=datetime('now','localtime'), note=COALESCE(note,'') || ? WHERE id=?",
         (f" | {note_append}", alloc_id),
+    )
+    write_ledger(
+        conn,
+        doc_type="RELEASE",
+        part_id=int(row["part_id"]),
+        qty=int(row["alloc_qty"]),
+        project_id=int(row["project_id"]) if row["project_id"] is not None else None,
+        from_location=clean_text(row["location"]),
+        note=note_append,
+        alloc_id=alloc_id,
     )
 
 
@@ -641,7 +923,7 @@ def consume_alloc(conn, alloc_id: int, note_append: str = "已消耗"):
     消耗 = 将 alloc 标记为 consumed + 扣减 stock（同一 part + location）
     强约束已保证 alloc 不会超预留，但 stock 扣减还需要确保该库位 stock 行存在且足够。
     """
-    a = conn.execute("SELECT part_id, location, alloc_qty, status FROM project_alloc WHERE id=?", (alloc_id,)).fetchone()
+    a = conn.execute("SELECT project_id, part_id, location, alloc_qty, status FROM project_alloc WHERE id=?", (alloc_id,)).fetchone()
     if not a:
         raise RuntimeError(f"alloc_id 不存在：{alloc_id}")
     if a["status"] != "reserved":
@@ -660,20 +942,61 @@ def consume_alloc(conn, alloc_id: int, note_append: str = "已消耗"):
         raise RuntimeError(f"扣减失败：库位库存不足（stock={int(s['qty'])} < consume={qty}）")
 
     # 事务：要么都成功要么都失败
-    conn.execute("BEGIN;")
+    _tx_begin(conn)
     try:
-        conn.execute(
-            "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime') WHERE id=?",
-            (qty, int(s["id"])),
-        )
         conn.execute(
             "UPDATE project_alloc SET status='consumed', updated_at=datetime('now','localtime'), note=COALESCE(note,'') || ? WHERE id=?",
             (f" | {note_append}", alloc_id),
         )
-        conn.execute("COMMIT;")
+        conn.execute(
+            "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime') WHERE id=?",
+            (qty, int(s["id"])),
+        )
+        write_ledger(
+            conn,
+            doc_type="CONSUME",
+            part_id=part_id,
+            qty=qty,
+            project_id=int(a["project_id"]) if a["project_id"] is not None else None,
+            from_location=location,
+            note=note_append,
+            alloc_id=alloc_id,
+        )
+        _tx_commit(conn)
     except Exception:
-        conn.execute("ROLLBACK;")
+        _tx_rollback(conn)
         raise
+
+
+def show_ledger(conn, project_code: str = "", mpn: str = "", since: str = ""):
+    sql = """
+    SELECT d.created_at, d.doc_type, pr.code AS project_code, p.mpn,
+           d.from_location, d.to_location, l.qty, d.ref, d.operator, d.note
+    FROM inv_doc d
+    JOIN inv_line l ON l.doc_id = d.id
+    JOIN parts p ON p.id = l.part_id
+    LEFT JOIN projects pr ON pr.id = d.project_id
+    WHERE 1=1
+    """
+    params = []
+    if clean_text(project_code):
+        sql += " AND pr.code = ?"
+        params.append(project_code)
+    if clean_text(mpn):
+        sql += " AND p.mpn = ?"
+        params.append(mpn)
+    if clean_text(since):
+        sql += " AND date(d.created_at) >= date(?)"
+        params.append(since)
+    sql += " ORDER BY d.id DESC"
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    if not rows:
+        print("没有流水记录")
+        return
+    headers = ["created_at", "doc_type", "project_code", "mpn", "from_location", "to_location", "qty", "ref", "operator", "note"]
+    print("\t".join(headers))
+    for r in rows:
+        print("\t".join(str(r[h]) if r[h] is not None else "" for h in headers))
 
 
 def show_project_status(conn, project_code: str):
@@ -1092,6 +1415,33 @@ def main():
     p.add_argument("--condition", default="new")
     p.add_argument("--note", default="")
 
+    p = sub.add_parser("stock-out", help="出库（按库位扣减库存）")
+    p.add_argument("--mpn", required=True)
+    p.add_argument("--loc", required=True)
+    p.add_argument("--qty", type=int, required=True)
+    p.add_argument("--proj", default="", help="可选项目 code")
+    p.add_argument("--ref", default="")
+    p.add_argument("--note", default="")
+    p.add_argument("--operator", default="")
+
+    p = sub.add_parser("stock-move", help="移库（from 扣减 + to 增加）")
+    p.add_argument("--mpn", required=True)
+    p.add_argument("--from", dest="from_loc", required=True)
+    p.add_argument("--to", dest="to_loc", required=True)
+    p.add_argument("--qty", type=int, required=True)
+    p.add_argument("--note", default="")
+    p.add_argument("--operator", default="")
+
+    p = sub.add_parser("stock-adjust", help="库存调整（--add 或 --sub 二选一，需说明原因）")
+    p.add_argument("--mpn", required=True)
+    p.add_argument("--loc", required=True)
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--add", type=int, default=0)
+    g.add_argument("--sub", type=int, default=0)
+    p.add_argument("--note", required=True)
+    p.add_argument("--ref", default="")
+    p.add_argument("--operator", default="")
+
     # project create
     p = sub.add_parser("proj-new", help="创建项目")
     p.add_argument("--code", required=True)
@@ -1132,6 +1482,11 @@ def main():
     # show alloc
     p = sub.add_parser("proj-alloc", help="查看项目预留明细（带库位）")
     p.add_argument("--proj", required=True)
+
+    p = sub.add_parser("ledger", help="查询库存流水")
+    p.add_argument("--proj", default="", help="按项目 code 过滤")
+    p.add_argument("--mpn", default="", help="按物料 MPN 过滤")
+    p.add_argument("--since", default="", help="按日期过滤（YYYY-MM-DD）")
 
     # project forms
     p = sub.add_parser("proj-forms", help="按项目生成出库/入库单 CSV；或仅按立创文件自动写入 parts+stock")
@@ -1182,9 +1537,29 @@ def main():
             return
 
         if args.cmd == "stock-in":
-            add_stock(conn, args.mpn, args.loc, args.qty, args.condition, args.note)
+            stock_in(conn, args.mpn, args.loc, args.qty, args.condition, args.note)
             conn.commit()
             print(f"入库成功：{args.mpn} @ {args.loc} +{args.qty}")
+            return
+
+        if args.cmd == "stock-out":
+            stock_out(conn, args.mpn, args.loc, args.qty, args.proj, args.ref, args.note, args.operator)
+            conn.commit()
+            print(f"出库成功：{args.mpn} @ {args.loc} -{args.qty}")
+            return
+
+        if args.cmd == "stock-move":
+            stock_move(conn, args.mpn, args.from_loc, args.to_loc, args.qty, args.note, args.operator)
+            conn.commit()
+            print(f"移库成功：{args.mpn} {args.from_loc} -> {args.to_loc} qty={args.qty}")
+            return
+
+        if args.cmd == "stock-adjust":
+            stock_adjust(conn, args.mpn, args.loc, add_qty=args.add, sub_qty=args.sub, note=args.note, ref=args.ref, operator=args.operator)
+            conn.commit()
+            mode = "add" if args.add > 0 else "sub"
+            v = args.add if args.add > 0 else args.sub
+            print(f"调整成功：{args.mpn} @ {args.loc} {mode} {v}")
             return
 
         if args.cmd == "proj-new":
@@ -1223,6 +1598,10 @@ def main():
 
         if args.cmd == "proj-alloc":
             show_alloc_detail(conn, args.proj)
+            return
+
+        if args.cmd == "ledger":
+            show_ledger(conn, args.proj, args.mpn, args.since)
             return
 
         if args.cmd == "proj-forms":
