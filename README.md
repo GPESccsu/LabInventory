@@ -24,6 +24,13 @@ LabInventory/
 - 推荐：`python inv.py ...`（可直接在仓库根目录运行）
 - 等价：`python app/inv.py ...`
 
+## 新增能力（2026-02）
+
+- 统一交易流水：`inventory_txn` + `inventory_txn_line`（IN/OUT/ADJUST，可选项目）。
+- `stock-in` / `stock-out` / `stock-adjust` 会同步写入统一流水（保留旧 `ledger` 兼容输出）。
+- 新增 `schema-export`：导出完整 schema（SQL/Markdown）。
+- 新增 `txn-export-xlsx` / `txn-import-xlsx`：模板导出与批量导入（默认全有全无，可 `--partial`）。
+
 ---
 
 ## 一、初始化与基础操作
@@ -67,6 +74,54 @@ python inv.py --db ./lab_inventory.db stock-adjust \
 
 # 流水查询
 python inv.py --db ./lab_inventory.db ledger --proj PJ-001 --mpn SN74LVC1G08DBVR --since 2026-01-01
+
+# 导出 schema（SQL / Markdown）
+python inv.py --db ./lab_inventory.db schema-export --format sql --out ./out/schema.sql
+python inv.py --db ./lab_inventory.db schema-export --format md  --out ./out/schema.md
+
+# 交易模板导出与批量导入
+python inv.py --db ./lab_inventory.db txn-export-xlsx --out ./out/txn_template.xlsx
+# 方式A：Transactions 单表（IN/OUT/ADJUST）
+python inv.py --db ./lab_inventory.db txn-import-xlsx --xlsx ./out/txn_template.xlsx --mode transactions --error-out ./out/txn_errors.json
+# 方式B：StockIn + StockOut 分表（更贴近日常入/出库）
+python inv.py --db ./lab_inventory.db txn-import-xlsx --xlsx ./out/txn_template.xlsx --mode stock-io --error-out ./out/txn_errors.json
+```
+
+### 2.1 可直接运行：基于 XLSX 的入库 + 出库完整示例
+
+> 下面这组命令都是命令行执行（不含 Python 内联脚本），演示“先批量入库，再批量出库（可带项目）”。
+
+```bash
+# 0) 准备一个全新数据库文件
+mkdir -p ./out
+sqlite3 ./out/xlsx_demo.db '.databases'
+
+# 1) 初始化库位
+python inv.py --db ./out/xlsx_demo.db init-locations --room T2 --g01-shelves 1 --g02-shelves 0 --positions 1
+
+# 2) 预置一个物料和一个项目（用于演示可选 project_code）
+sqlite3 ./out/xlsx_demo.db "INSERT OR IGNORE INTO parts(mpn,name,category,package,params,url,datasheet,note) VALUES('MPN-X1','Demo Part','IC','SOT23','','','','xlsx demo part');"
+sqlite3 ./out/xlsx_demo.db "INSERT OR IGNORE INTO projects(code,name,owner,note) VALUES('PJ-001','Demo Project','','xlsx demo');"
+
+# 3) 导出模板 xlsx（包含 Transactions / StockIn / StockOut 三个 sheet）
+python inv.py --db ./out/xlsx_demo.db txn-export-xlsx --out ./out/stockio_demo.xlsx
+
+# 4) 用 Excel/WPS 打开 ./out/stockio_demo.xlsx，按下面内容填写后保存：
+# StockIn:  project_code='',     mpn='MPN-X1', location='T2-G01-S01-P01', qty=5, condition='new', note='批量入库', ref='BATCH-001', operator='alice'
+# StockOut: project_code='PJ-001', mpn='MPN-X1', location='T2-G01-S01-P01', qty=2, note='项目领用', ref='BATCH-001', operator='alice'
+
+# 5) 导入 xlsx（使用分表模式）
+python inv.py --db ./out/xlsx_demo.db txn-import-xlsx --xlsx ./out/stockio_demo.xlsx --mode stock-io --error-out ./out/stockio_demo_errors.json
+
+# 6) 验证库存与流水（预期：库存=3，且至少2条交易）
+sqlite3 ./out/xlsx_demo.db "SELECT s.qty FROM stock s JOIN parts p ON p.id=s.part_id WHERE p.mpn='MPN-X1' AND s.location='T2-G01-S01-P01';"
+sqlite3 ./out/xlsx_demo.db "SELECT COUNT(*) FROM inventory_txn;"
+```
+
+如果你更习惯单表，也可以改用 `Transactions` sheet 并使用：
+
+```bash
+python inv.py --db ./out/xlsx_demo.db txn-import-xlsx --xlsx ./out/stockio_demo.xlsx --mode transactions
 ```
 
 ---
