@@ -48,6 +48,21 @@ python inv.py --db ./lab_inventory.db lcsc \
 ```bash
 python inv.py --db ./lab_inventory.db stock-in \
   --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 20
+
+# 出库（可选关联项目）
+python inv.py --db ./lab_inventory.db stock-out \
+  --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 5 --proj PJ-001
+
+# 移库
+python inv.py --db ./lab_inventory.db stock-move \
+  --mpn SN74LVC1G08DBVR --from C409-G01-S01-P01 --to C409-G01-S01-P02 --qty 2
+
+# 调整（必须填写 note；--add / --sub 二选一）
+python inv.py --db ./lab_inventory.db stock-adjust \
+  --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P02 --sub 1 --note "盘点差异"
+
+# 流水查询
+python inv.py --db ./lab_inventory.db ledger --proj PJ-001 --mpn SN74LVC1G08DBVR --since 2026-01-01
 ```
 
 ---
