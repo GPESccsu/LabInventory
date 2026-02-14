@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 import os
 import re
 import sqlite3
@@ -344,6 +345,39 @@ JOIN projects pr ON pr.id = a.project_id
 JOIN parts p     ON p.id  = a.part_id;
 """
 
+MIGRATION_DDL = r"""
+CREATE TABLE IF NOT EXISTS inventory_txn (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  txn_type      TEXT NOT NULL CHECK(txn_type IN ('IN','OUT','ADJUST')),
+  project_id    INTEGER,
+  ref           TEXT,
+  note          TEXT,
+  operator      TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_txn_type    ON inventory_txn(txn_type);
+CREATE INDEX IF NOT EXISTS idx_inventory_txn_created ON inventory_txn(created_at);
+CREATE INDEX IF NOT EXISTS idx_inventory_txn_project ON inventory_txn(project_id);
+
+CREATE TABLE IF NOT EXISTS inventory_txn_line (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  txn_id        INTEGER NOT NULL,
+  part_id       INTEGER NOT NULL,
+  mpn_snapshot  TEXT NOT NULL,
+  location      TEXT NOT NULL,
+  qty_delta     INTEGER NOT NULL,
+  condition     TEXT NOT NULL DEFAULT 'new',
+  note          TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (txn_id) REFERENCES inventory_txn(id) ON DELETE CASCADE,
+  FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_txn_line_txn      ON inventory_txn_line(txn_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_txn_line_part     ON inventory_txn_line(part_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_txn_line_location ON inventory_txn_line(location);
+"""
+
 
 def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
@@ -354,7 +388,12 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection):
     conn.executescript(DDL)
+    apply_migrations(conn)
     conn.commit()
+
+
+def apply_migrations(conn: sqlite3.Connection):
+    conn.executescript(MIGRATION_DDL)
 
 
 # ---------------------------
@@ -630,6 +669,61 @@ def write_ledger(
     return doc_id
 
 
+def create_txn(conn, txn_type: str, project_code: str | None = None, ref: str = "", note: str = "", operator: str = "") -> int:
+    txn_type = clean_text(txn_type).upper()
+    if txn_type not in {"IN", "OUT", "ADJUST"}:
+        raise RuntimeError(f"不支持的 txn_type：{txn_type}")
+    project_id = get_project_id_optional(conn, project_code or "")
+    cur = conn.execute(
+        "INSERT INTO inventory_txn (txn_type, project_id, ref, note, operator) VALUES (?,?,?,?,?)",
+        (txn_type, project_id, ref or None, note or None, operator or None),
+    )
+    return int(cur.lastrowid)
+
+
+def add_txn_line(
+    conn,
+    txn_id: int,
+    mpn: str,
+    location: str,
+    qty_delta: int,
+    condition: str = "new",
+    note: str = "",
+) -> int:
+    if qty_delta == 0:
+        raise RuntimeError("qty_delta 不能为 0")
+    assert_location_exists(conn, location)
+    part_id = get_part_id_by_mpn(conn, mpn)
+    cur = conn.execute(
+        """
+        INSERT INTO inventory_txn_line (txn_id, part_id, mpn_snapshot, location, qty_delta, condition, note)
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        (txn_id, part_id, mpn, location, qty_delta, condition, note or None),
+    )
+    return int(cur.lastrowid)
+
+
+def apply_stock_delta(conn, *, part_id: int, location: str, qty_delta: int, condition: str = "new", note: str = ""):
+    if qty_delta == 0:
+        raise RuntimeError("库存变化量不能为 0")
+    row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
+    current = int(row["qty"]) if row else 0
+    nxt = current + qty_delta
+    if nxt < 0:
+        raise RuntimeError(f"库存不足：part_id={part_id} location={location} stock={current} delta={qty_delta}")
+    if row:
+        conn.execute(
+            "UPDATE stock SET qty=?, updated_at=datetime('now','localtime'), condition=?, note=? WHERE id=?",
+            (nxt, condition, note, int(row["id"])),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
+            (part_id, location, qty_delta, condition, note),
+        )
+
+
 def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: str, url: str, datasheet: str, note: str) -> int:
     row = conn.execute("SELECT id FROM parts WHERE mpn=?", (mpn,)).fetchone()
     if row:
@@ -674,17 +768,9 @@ def stock_in(
     project_id = get_project_id_optional(conn, project_code)
     _tx_begin(conn)
     try:
-        row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
-        if row:
-            conn.execute(
-                "UPDATE stock SET qty=?, updated_at=datetime('now','localtime'), condition=?, note=? WHERE id=?",
-                (int(row["qty"]) + qty, condition, note, int(row["id"])),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
-                (part_id, location, qty, condition, note),
-            )
+        apply_stock_delta(conn, part_id=part_id, location=location, qty_delta=qty, condition=condition, note=note)
+        txn_id = create_txn(conn, "IN", project_code, ref=ref, note=note, operator=operator)
+        add_txn_line(conn, txn_id, mpn, location, qty, condition=condition, note=note)
         write_ledger(
             conn,
             doc_type="IN",
@@ -713,17 +799,11 @@ def stock_out(conn, mpn: str, location: str, qty: int, project_code: str = "", r
     assert_location_exists(conn, location)
     part_id = get_part_id_by_mpn(conn, mpn)
     project_id = get_project_id_optional(conn, project_code)
-    row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
-    if not row:
-        raise RuntimeError(f"stock 中找不到该库位记录：part_id={part_id}, location={location}")
-    if int(row["qty"]) < qty:
-        raise RuntimeError(f"扣减失败：库位库存不足（stock={int(row['qty'])} < out={qty}）")
     _tx_begin(conn)
     try:
-        conn.execute(
-            "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
-            (qty, note, int(row["id"])),
-        )
+        apply_stock_delta(conn, part_id=part_id, location=location, qty_delta=-qty, note=note)
+        txn_id = create_txn(conn, "OUT", project_code, ref=ref, note=note, operator=operator)
+        add_txn_line(conn, txn_id, mpn, location, -qty, note=note)
         write_ledger(
             conn,
             doc_type="OUT",
@@ -803,31 +883,18 @@ def stock_adjust(
         raise RuntimeError("stock-adjust 必须提供 --note")
     assert_location_exists(conn, location)
     part_id = get_part_id_by_mpn(conn, mpn)
-    row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
     _tx_begin(conn)
     try:
         if add_qty > 0:
-            if row:
-                conn.execute(
-                    "UPDATE stock SET qty=qty+?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
-                    (add_qty, note, int(row["id"])),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
-                    (part_id, location, add_qty, "new", note),
-                )
+            apply_stock_delta(conn, part_id=part_id, location=location, qty_delta=add_qty, note=note)
             qty = add_qty
+            qty_delta = add_qty
         else:
-            if not row:
-                raise RuntimeError(f"stock 中找不到该库位记录：part_id={part_id}, location={location}")
-            if int(row["qty"]) < sub_qty:
-                raise RuntimeError(f"调整失败：库位库存不足（stock={int(row['qty'])} < sub={sub_qty}）")
-            conn.execute(
-                "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
-                (sub_qty, note, int(row["id"])),
-            )
+            apply_stock_delta(conn, part_id=part_id, location=location, qty_delta=-sub_qty, note=note)
             qty = sub_qty
+            qty_delta = -sub_qty
+        txn_id = create_txn(conn, "ADJUST", None, ref=ref, note=note, operator=operator)
+        add_txn_line(conn, txn_id, mpn, location, qty_delta, note=("add" if add_qty > 0 else "sub"))
         write_ledger(
             conn,
             doc_type="ADJUST",
@@ -952,6 +1019,13 @@ def consume_alloc(conn, alloc_id: int, note_append: str = "已消耗"):
             "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime') WHERE id=?",
             (qty, int(s["id"])),
         )
+        project_code = ""
+        if a["project_id"] is not None:
+            pr = conn.execute("SELECT code FROM projects WHERE id=?", (int(a["project_id"]),)).fetchone()
+            project_code = clean_text(pr["code"]) if pr else ""
+        mpn_row = conn.execute("SELECT mpn FROM parts WHERE id=?", (part_id,)).fetchone()
+        txn_id = create_txn(conn, "OUT", project_code, note=note_append)
+        add_txn_line(conn, txn_id, clean_text(mpn_row["mpn"]) if mpn_row else str(part_id), location, -qty, note=note_append)
         write_ledger(
             conn,
             doc_type="CONSUME",
@@ -997,6 +1071,160 @@ def show_ledger(conn, project_code: str = "", mpn: str = "", since: str = ""):
     print("\t".join(headers))
     for r in rows:
         print("\t".join(str(r[h]) if r[h] is not None else "" for h in headers))
+
+
+def export_schema_sql(conn) -> str:
+    rows = conn.execute(
+        """
+        SELECT type, name, sql
+        FROM sqlite_master
+        WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+        ORDER BY CASE type WHEN 'table' THEN 1 WHEN 'index' THEN 2 WHEN 'view' THEN 3 WHEN 'trigger' THEN 4 ELSE 9 END, name
+        """
+    ).fetchall()
+    return "\n\n".join(f"-- {r['type']}: {r['name']}\n{r['sql']};" for r in rows)
+
+
+def export_schema_md(conn) -> str:
+    lines = ["# Database Schema", ""]
+    for t in ("table", "view", "index", "trigger"):
+        rows = conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type=? AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            (t,),
+        ).fetchall()
+        lines.append(f"## {t}s")
+        lines.append("")
+        for r in rows:
+            lines.append(f"### {r['name']}")
+            if t == "table":
+                cols = conn.execute(f"PRAGMA table_info('{r['name']}')").fetchall()
+                lines.append("| cid | name | type | notnull | dflt | pk |")
+                lines.append("|---:|---|---|---:|---|---:|")
+                for c in cols:
+                    lines.append(f"| {c['cid']} | {c['name']} | {c['type']} | {c['notnull']} | {c['dflt_value'] or ''} | {c['pk']} |")
+            lines.append("```sql")
+            lines.append((r["sql"] or "").strip())
+            lines.append("```")
+            lines.append("")
+    return "\n".join(lines)
+
+
+def schema_export(conn, fmt: str = "sql", out_path: Path | None = None):
+    content = export_schema_sql(conn) if fmt == "sql" else export_schema_md(conn)
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(content, encoding="utf-8")
+        return
+    print(content)
+
+
+def _load_openpyxl():
+    try:
+        from openpyxl import Workbook, load_workbook
+        return Workbook, load_workbook
+    except Exception as e:
+        raise RuntimeError("缺少依赖 openpyxl，请先安装：python -m pip install openpyxl") from e
+
+
+def txn_export_xlsx_template(out_path: Path):
+    Workbook, _ = _load_openpyxl()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Transactions"
+    ws.append(["txn_type", "project_code", "mpn", "location", "qty", "condition", "note", "ref", "operator"])
+    ws.append(["IN", "", "SN74LVC1G08DBVR", "C409-G01-S01-P01", 10, "new", "样例入库", "BATCH-001", "alice"])
+    ws.append(["OUT", "PJ-001", "SN74LVC1G08DBVR", "C409-G01-S01-P01", 2, "new", "样例出库", "BATCH-001", "alice"])
+
+    ws_in = wb.create_sheet("StockIn")
+    ws_in.append(["project_code", "mpn", "location", "qty", "condition", "note", "ref", "operator"])
+    ws_in.append(["", "SN74LVC1G08DBVR", "C409-G01-S01-P01", 10, "new", "批量入库样例", "BATCH-001", "alice"])
+
+    ws_out = wb.create_sheet("StockOut")
+    ws_out.append(["project_code", "mpn", "location", "qty", "note", "ref", "operator"])
+    ws_out.append(["PJ-001", "SN74LVC1G08DBVR", "C409-G01-S01-P01", 2, "批量出库样例", "BATCH-001", "alice"])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(out_path)
+
+
+def _iter_txn_rows_from_workbook(wb, mode: str):
+    rows = []
+    has_transactions = "Transactions" in wb.sheetnames
+    has_stock_io = ("StockIn" in wb.sheetnames) or ("StockOut" in wb.sheetnames)
+    if mode == "transactions":
+        if not has_transactions:
+            raise RuntimeError("XLSX 缺少 Transactions sheet")
+    elif mode == "stock-io":
+        if not has_stock_io:
+            raise RuntimeError("XLSX 缺少 StockIn/StockOut sheet")
+    elif not has_transactions and not has_stock_io:
+        raise RuntimeError("XLSX 缺少可识别的 sheet（Transactions 或 StockIn/StockOut）")
+
+    if has_transactions and mode in ("auto", "transactions"):
+        ws = wb["Transactions"]
+        for idx, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            rows.append(("Transactions", idx, r))
+
+    if has_stock_io and mode in ("auto", "stock-io"):
+        if "StockIn" in wb.sheetnames:
+            ws = wb["StockIn"]
+            for idx, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                mapped = ("IN", r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7])
+                rows.append(("StockIn", idx, mapped))
+        if "StockOut" in wb.sheetnames:
+            ws = wb["StockOut"]
+            for idx, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                mapped = ("OUT", r[0], r[1], r[2], r[3], "new", r[4], r[5], r[6])
+                rows.append(("StockOut", idx, mapped))
+    return rows
+
+
+def txn_import_xlsx(conn, xlsx_path: Path, partial: bool = False, error_out: Path | None = None, mode: str = "auto") -> tuple[int, int]:
+    _, load_workbook = _load_openpyxl()
+    wb = load_workbook(xlsx_path)
+    rows = _iter_txn_rows_from_workbook(wb, mode=mode)
+    errors = []
+    ok = 0
+    _tx_begin(conn, "xlsx_batch")
+    try:
+        for sheet_name, idx, r in rows:
+            if r is None or all(v in (None, "") for v in r):
+                continue
+            txn_type = clean_text(r[0]).upper()
+            project_code = clean_text(r[1])
+            mpn = clean_text(r[2])
+            location = clean_text(r[3])
+            qty_raw = r[4]
+            condition = clean_text(r[5]) or "new"
+            note = clean_text(r[6])
+            ref = clean_text(r[7])
+            operator = clean_text(r[8])
+            try:
+                qty = int(qty_raw)
+                if qty <= 0:
+                    raise RuntimeError("qty 必须为正整数")
+                if txn_type == "IN":
+                    stock_in(conn, mpn, location, qty, condition=condition, note=note, project_code=project_code, ref=ref, operator=operator)
+                elif txn_type == "OUT":
+                    stock_out(conn, mpn, location, qty, project_code=project_code, ref=ref, note=note, operator=operator)
+                elif txn_type == "ADJUST":
+                    stock_adjust(conn, mpn, location, add_qty=qty, note=note or "xlsx adjust", ref=ref, operator=operator)
+                else:
+                    raise RuntimeError("txn_type 仅支持 IN/OUT/ADJUST")
+                ok += 1
+            except Exception as e:
+                errors.append({"sheet": sheet_name, "row": idx, "error": str(e), "values": ["" if v is None else str(v) for v in r]})
+                if not partial:
+                    raise
+        _tx_commit(conn, "xlsx_batch")
+    except Exception:
+        _tx_rollback(conn, "xlsx_batch")
+    if errors and error_out:
+        error_out.parent.mkdir(parents=True, exist_ok=True)
+        error_out.write_text(json.dumps(errors, ensure_ascii=False, indent=2), encoding="utf-8")
+    if errors and not partial:
+        e0 = errors[0]
+        raise RuntimeError(f"导入失败，共 {len(errors)} 行错误；首个错误：{e0['sheet']} 第{e0['row']}行 {e0['error']}")
+    return ok, len(errors)
 
 
 def show_project_status(conn, project_code: str):
@@ -1488,6 +1716,19 @@ def main():
     p.add_argument("--mpn", default="", help="按物料 MPN 过滤")
     p.add_argument("--since", default="", help="按日期过滤（YYYY-MM-DD）")
 
+    p = sub.add_parser("schema-export", help="导出数据库结构（tables/indexes/views/triggers）")
+    p.add_argument("--format", dest="fmt", choices=["sql", "md"], default="sql")
+    p.add_argument("--out", default="", help="输出文件路径；不提供则输出到 stdout")
+
+    p = sub.add_parser("txn-export-xlsx", help="导出交易模板 xlsx")
+    p.add_argument("--out", required=True, help="输出 xlsx 路径")
+
+    p = sub.add_parser("txn-import-xlsx", help="导入交易 xlsx（Transactions sheet）")
+    p.add_argument("--xlsx", required=True, help="输入 xlsx 文件")
+    p.add_argument("--mode", choices=["auto", "transactions", "stock-io"], default="auto", help="导入模式：auto(自动识别) / transactions / stock-io")
+    p.add_argument("--partial", action="store_true", help="开启部分成功模式（默认全有全无）")
+    p.add_argument("--error-out", default="", help="错误报告输出 json 路径")
+
     # project forms
     p = sub.add_parser("proj-forms", help="按项目生成出库/入库单 CSV；或仅按立创文件自动写入 parts+stock")
     p.add_argument("--proj", default="", help="项目 code")
@@ -1602,6 +1843,29 @@ def main():
 
         if args.cmd == "ledger":
             show_ledger(conn, args.proj, args.mpn, args.since)
+            return
+
+        if args.cmd == "schema-export":
+            out_path = resolve_output_path(args.out, cwd) if args.out else None
+            schema_export(conn, fmt=args.fmt, out_path=out_path)
+            if out_path:
+                print(f"schema 已导出：{out_path}")
+            return
+
+        if args.cmd == "txn-export-xlsx":
+            out = resolve_output_path(args.out, cwd)
+            txn_export_xlsx_template(out)
+            print(f"交易模板已导出：{out}")
+            return
+
+        if args.cmd == "txn-import-xlsx":
+            xlsx_path = resolve_input_path(args.xlsx, cwd)
+            error_out = resolve_output_path(args.error_out, cwd) if args.error_out else None
+            ok, err = txn_import_xlsx(conn, xlsx_path, partial=args.partial, error_out=error_out, mode=args.mode)
+            conn.commit()
+            print(f"导入完成：成功 {ok} 行，失败 {err} 行")
+            if error_out:
+                print(f"错误报告：{error_out}")
             return
 
         if args.cmd == "proj-forms":
