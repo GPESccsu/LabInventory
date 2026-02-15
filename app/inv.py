@@ -825,27 +825,46 @@ def stock_in(
     ref: str = "",
     operator: str = "",
 ):
-    if qty <= 0:
-        raise RuntimeError("入库数量必须为正整数")
     assert_location_exists(conn, location)
     part_id = get_part_id_by_mpn(conn, mpn)
     project_id = get_project_id_optional(conn, project_code)
     _tx_begin(conn)
     try:
-        apply_stock_delta(conn, part_id=part_id, location=location, qty_delta=qty, condition=condition, note=note)
-        txn_id = create_txn(conn, "IN", project_code, ref=ref, note=note, operator=operator)
-        add_txn_line(conn, txn_id, mpn, location, qty, condition=condition, note=note)
-        write_ledger(
-            conn,
-            doc_type="IN",
-            part_id=part_id,
-            qty=qty,
-            project_id=project_id,
-            to_location=location,
-            ref=ref,
-            operator=operator,
-            note=note,
-        )
+        row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE stock SET qty=?, updated_at=datetime('now','localtime'), condition=?, note=? WHERE id=?",
+                (int(row["qty"]) + qty, condition, note, int(row["id"])),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
+                (part_id, location, qty, condition, note),
+            )
+        if qty > 0:
+            write_ledger(
+                conn,
+                doc_type="IN",
+                part_id=part_id,
+                qty=qty,
+                project_id=project_id,
+                to_location=location,
+                ref=ref,
+                operator=operator,
+                note=note,
+            )
+        elif qty < 0:
+            write_ledger(
+                conn,
+                doc_type="OUT",
+                part_id=part_id,
+                qty=abs(qty),
+                project_id=project_id,
+                from_location=location,
+                ref=ref,
+                operator=operator,
+                note=note,
+            )
         _tx_commit(conn)
     except Exception:
         _tx_rollback(conn)
@@ -1764,7 +1783,7 @@ def main():
     p.add_argument("--datasheets-dir", default="", help=r"数据手册保存目录（默认=数据库同级 datasheets）")
 
     # stock in
-    p = sub.add_parser("stock-in", help="入库（按库位增加库存）")
+    p = sub.add_parser("stock-in", help="入库（按库位变更库存，兼容 qty<=0 的历史用法）")
     p.add_argument("--mpn", required=True)
     p.add_argument("--loc", required=True)
     p.add_argument("--qty", type=int, required=True)
