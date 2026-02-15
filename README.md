@@ -259,3 +259,8 @@ python scripts/import_bom.py \
 3. 生成 `出库单/入库单`，按实际流程领料和到货。
 4. 需要时 `--apply-inbound` 自动入库。
 5. 用 `proj-status / proj-alloc` 持续检查备料与预留状态。
+
+
+## 项目资源挂接
+
+已新增 `project` 命令族用于项目资源路径/URL 挂接，详见 `README_project_resources.md`。

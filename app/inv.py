@@ -12,6 +12,14 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from app.project_resources import (
+    check_resources,
+    import_resources_xlsx,
+    list_resources,
+    remove_resource,
+    upsert_resource,
+)
+
 
 # ---------------------------
 # 基础工具
@@ -343,6 +351,60 @@ SELECT
 FROM project_alloc a
 JOIN projects pr ON pr.id = a.project_id
 JOIN parts p     ON p.id  = a.part_id;
+
+CREATE TABLE IF NOT EXISTS project_resources (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL,
+  type        TEXT    NOT NULL,
+  name        TEXT    NOT NULL,
+  uri         TEXT    NOT NULL,
+  is_dir      INTEGER NOT NULL DEFAULT 1,
+  note        TEXT,
+  tags        TEXT,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_project_resources_project ON project_resources(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_resources_type    ON project_resources(type);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_resources_unique
+  ON project_resources(project_id, type, uri);
+
+CREATE TRIGGER IF NOT EXISTS trg_project_resources_updated
+AFTER UPDATE ON project_resources
+FOR EACH ROW
+BEGIN
+  UPDATE project_resources
+  SET updated_at = datetime('now','localtime')
+  WHERE id = NEW.id;
+END;
+
+CREATE VIEW IF NOT EXISTS v_project_resources AS
+SELECT
+  p.code  AS project_code,
+  p.name  AS project_name,
+  r.type,
+  r.name  AS resource_name,
+  r.uri,
+  r.is_dir,
+  r.tags,
+  r.note,
+  r.updated_at
+FROM project_resources r
+JOIN projects p ON p.id = r.project_id;
+
+CREATE VIEW IF NOT EXISTS v_project_overview AS
+SELECT
+  p.code AS project_code,
+  p.name AS project_name,
+  p.status,
+  (SELECT COUNT(*) FROM project_bom b WHERE b.project_id = p.id) AS bom_lines,
+  (SELECT COALESCE(SUM(b.req_qty),0) FROM project_bom b WHERE b.project_id = p.id) AS bom_total_req,
+  (SELECT COUNT(*) FROM project_alloc a WHERE a.project_id = p.id) AS alloc_lines,
+  (SELECT COALESCE(SUM(a.alloc_qty),0) FROM project_alloc a WHERE a.project_id = p.id) AS alloc_total_reserved,
+  (SELECT COUNT(*) FROM project_resources r WHERE r.project_id = p.id) AS resource_count,
+  p.created_at
+FROM projects p;
 """
 
 MIGRATION_DDL = r"""
@@ -380,8 +442,10 @@ CREATE INDEX IF NOT EXISTS idx_inventory_txn_line_location ON inventory_txn_line
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
@@ -918,6 +982,63 @@ def create_project(conn, code: str, name: str, owner: str = "", note: str = ""):
         "INSERT INTO projects (code, name, owner, note) VALUES (?,?,?,?)",
         (code, name, owner or None, note or None),
     )
+
+
+def add_project(conn, code: str, name: str, owner: str = "", note: str = "") -> tuple[int, bool]:
+    row = conn.execute("SELECT id FROM projects WHERE code=?", (code,)).fetchone()
+    if row:
+        conn.execute(
+            """
+            UPDATE projects
+            SET name=COALESCE(NULLIF(?,''), name),
+                owner=COALESCE(NULLIF(?,''), owner),
+                note=COALESCE(NULLIF(?,''), note)
+            WHERE code=?
+            """,
+            (name, owner, note, code),
+        )
+        return int(row["id"]), False
+    create_project(conn, code, name, owner, note)
+    new_id = int(conn.execute("SELECT id FROM projects WHERE code=?", (code,)).fetchone()["id"])
+    return new_id, True
+
+
+def show_project_resources(conn, project_code: str):
+    project_id = get_project_id(conn, project_code)
+    rows = list_resources(conn, project_id)
+    if not rows:
+        print("没有项目资源记录")
+        return
+    headers = ["id", "type", "name", "uri", "is_dir", "tags", "note", "updated_at"]
+    print("\t".join(headers))
+    for r in rows:
+        print("\t".join(str(r[h] if r[h] is not None else "") for h in headers))
+
+
+def show_project_overview(conn, project_code: str = ""):
+    if clean_text(project_code):
+        rows = conn.execute("SELECT * FROM v_project_overview WHERE project_code=?", (project_code,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM v_project_overview ORDER BY project_code").fetchall()
+    if not rows:
+        print("没有项目记录")
+        return
+    headers = ["project_code", "project_name", "status", "bom_lines", "bom_total_req", "alloc_lines", "alloc_total_reserved", "resource_count", "created_at"]
+    print("\t".join(headers))
+    for r in rows:
+        print("\t".join(str(r[h]) for h in headers))
+
+
+def check_project_resources(conn, project_code: str):
+    project_id = get_project_id(conn, project_code)
+    checks = check_resources(conn, project_id)
+    if not checks:
+        print("没有项目资源记录")
+        return
+    headers = ["id", "type", "name", "ok", "detail", "uri"]
+    print("\t".join(headers))
+    for item in checks:
+        print("\t".join(str(item[h]) for h in headers))
 
 
 def set_bom(conn, project_code: str, mpn: str, req_qty: int, priority: int = 2, note: str = ""):
@@ -1678,6 +1799,49 @@ def main():
     p.add_argument("--operator", default="")
 
     # project create
+    p_project = sub.add_parser("project", help="项目管理（新增资源挂接）")
+    project_sub = p_project.add_subparsers(dest="project_cmd", required=True)
+
+    p = project_sub.add_parser("add", help="创建项目（存在则更新）")
+    p.add_argument("--code", required=True)
+    p.add_argument("--name", required=True)
+    p.add_argument("--owner", default="")
+    p.add_argument("--note", default="")
+
+    p = project_sub.add_parser("overview", help="查看项目总览")
+    p.add_argument("--code", default="", help="可选，项目 code")
+
+    p_res = project_sub.add_parser("resource", help="项目资源管理")
+    resource_sub = p_res.add_subparsers(dest="resource_cmd", required=True)
+
+    p = resource_sub.add_parser("add", help="添加/更新项目资源")
+    p.add_argument("--code", required=True)
+    p.add_argument("--type", required=True)
+    p.add_argument("--name", required=True)
+    p.add_argument("--uri", required=True)
+    p.add_argument("--is-dir", type=int, choices=[0, 1], default=1)
+    p.add_argument("--tags", default="")
+    p.add_argument("--note", default="")
+    p.add_argument("--no-check", action="store_true")
+
+    p = resource_sub.add_parser("ls", help="列出项目资源")
+    p.add_argument("--code", required=True)
+
+    p = resource_sub.add_parser("rm", help="删除项目资源")
+    p.add_argument("--code", required=True)
+    p.add_argument("--type", required=True)
+    p.add_argument("--uri", required=True)
+
+    p = resource_sub.add_parser("check", help="检查项目资源有效性")
+    p.add_argument("--code", required=True)
+
+    p = resource_sub.add_parser("import-xlsx", help="批量导入项目资源")
+    p.add_argument("--xlsx", required=True)
+    p.add_argument("--sheet", default="project_resources")
+    p.add_argument("--header-row", type=int, default=1)
+    p.add_argument("--auto-create-project", action="store_true")
+    p.add_argument("--no-check", action="store_true")
+
     p = sub.add_parser("proj-new", help="创建项目")
     p.add_argument("--code", required=True)
     p.add_argument("--name", required=True)
@@ -1809,6 +1973,60 @@ def main():
             v = args.add if args.add > 0 else args.sub
             print(f"调整成功：{args.mpn} @ {args.loc} {mode} {v}")
             return
+
+        if args.cmd == "project":
+            if args.project_cmd == "add":
+                _, created = add_project(conn, args.code, args.name, args.owner, args.note)
+                conn.commit()
+                print(f"项目{'创建' if created else '更新'}成功：{args.code}")
+                return
+            if args.project_cmd == "overview":
+                show_project_overview(conn, args.code)
+                return
+            if args.project_cmd == "resource":
+                if args.resource_cmd == "add":
+                    project_id = get_project_id(conn, args.code)
+                    rid = upsert_resource(
+                        conn,
+                        project_id=project_id,
+                        resource_type=args.type,
+                        name=args.name,
+                        uri=args.uri,
+                        is_dir=args.is_dir,
+                        tags=args.tags,
+                        note=args.note,
+                        no_check=args.no_check,
+                    )
+                    conn.commit()
+                    print(f"项目资源写入成功：id={rid}")
+                    return
+                if args.resource_cmd == "ls":
+                    show_project_resources(conn, args.code)
+                    return
+                if args.resource_cmd == "rm":
+                    project_id = get_project_id(conn, args.code)
+                    n = remove_resource(conn, project_id, args.type, args.uri)
+                    conn.commit()
+                    print(f"删除完成：{n} 条")
+                    return
+                if args.resource_cmd == "check":
+                    check_project_resources(conn, args.code)
+                    return
+                if args.resource_cmd == "import-xlsx":
+                    xlsx_path = resolve_input_path(args.xlsx, cwd)
+                    ok, err = import_resources_xlsx(
+                        conn,
+                        xlsx_path=xlsx_path,
+                        sheet=args.sheet,
+                        header_row=args.header_row,
+                        no_check=args.no_check,
+                        auto_create_project=args.auto_create_project,
+                        get_project_id=lambda code: get_project_id(conn, code),
+                        create_project=lambda code, name: add_project(conn, code, name),
+                    )
+                    conn.commit()
+                    print(f"导入完成：成功 {ok} 行，失败 {err} 行")
+                    return
 
         if args.cmd == "proj-new":
             create_project(conn, args.code, args.name, args.owner, args.note)

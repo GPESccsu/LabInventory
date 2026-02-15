@@ -1,0 +1,4 @@
+project_code,type,name,uri,is_dir,tags,note
+PJ-001,hw_pcb,PCB工程,G:\Projects\PJ-001\HW,1,"pcb,kicad",硬件目录
+PJ-001,sw_repo,固件代码,https://example.com/org/pj001-fw.git,1,"fw,stm32",Git仓库
+PJ-001,docs,设计文档,G:\Projects\PJ-001\Docs\spec.docx,0,"spec,review",设计规格书
