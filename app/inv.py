@@ -19,6 +19,7 @@ from app.project_resources import (
     remove_resource,
     upsert_resource,
 )
+from app.db import connect as db_connect
 
 
 # ---------------------------
@@ -442,12 +443,7 @@ CREATE INDEX IF NOT EXISTS idx_inventory_txn_line_location ON inventory_txn_line
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA busy_timeout=30000;")
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    return db_connect(db_path)
 
 
 def init_db(conn: sqlite3.Connection):

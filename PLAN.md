@@ -1,23 +1,32 @@
-# PLAN.md — 项目资源挂接（本次落地）
+# PLAN.md — Web 化改造落地（本次执行）
 
-## 已完成
-- 在 `init_db()` 幂等 DDL 中新增：
-  - `project_resources` 表（`project_id/type/name/uri/is_dir/tags/note/created_at/updated_at`）
-  - 索引与唯一约束：`(project_id, type, uri)`
-  - `trg_project_resources_updated` 触发器
-  - `v_project_resources` / `v_project_overview` 视图
-- 数据库连接增强：`timeout=30`、`WAL`、`busy_timeout=30000`。
-- 新增 Python 资源模块：`app/project_resources.py`。
-- CLI 新增层级命令：
-  - `project add`
-  - `project overview`
-  - `project resource add/ls/rm/check/import-xlsx`
-- 批量导入支持 `--sheet`、`--header-row`、`--auto-create-project`、`--no-check`。
+## 目标
+在保持 `inv.py` CLI 兼容的前提下，新增 FastAPI + Streamlit，并抽离共享业务层。
 
-## 兼容性
-- 保留了所有既有命令与参数（`proj-new`、`bom-set`、`reserve`、`consume`、`proj-status`、`proj-alloc`、`schema-export` 等）。
-- `inv.py` 顶层入口不变（`python inv.py ...`）。
+## 本次已完成
+- 新增 `app/db.py`
+  - 统一 `connect()`：`timeout=30`、`check_same_thread=False`。
+  - PRAGMA：`journal_mode=WAL`、`synchronous=NORMAL`、`busy_timeout=30000`、`foreign_keys=ON`。
+  - `init_db()` 复用原 `inv.py` 幂等初始化。
+- 新增 `app/core.py`
+  - 对项目/BOM/预留/释放/消耗/资源/XLSX 导入提供统一函数接口。
+  - API 与后续扩展均通过 core 调用，避免逻辑分叉。
+  - 增加 `database is locked` 的统一错误归一化。
+- 新增 `app/schemas.py`
+  - 集中定义 API 请求/响应模型（Pydantic）。
+- 新增 `app/api.py`
+  - 完成项目、BOM、预留/释放/消耗、资源管理、交易/资源 XLSX 导入 API。
+- 新增 `ui/streamlit_app.py`
+  - 中文界面，覆盖项目列表与创建、项目状态、预留、释放/消耗、资源管理、XLSX 导入。
+  - UI 全部通过 HTTP 调用 API，不直接访问数据库。
+- 更新 `pyproject.toml`
+  - 使用 Poetry 管理依赖，包含 FastAPI/Streamlit/Pydantic/Uvicorn 等。
+- 更新 `README.md`
+  - 中文安装、启动、最小流程、并发说明。
+- 兼容性处理
+  - `app/inv.py` 仍为 CLI 主实现，仅将 `connect()` 委托到 `app.db.connect`，保留现有命令入口与行为。
 
-## 待扩展（后续）
-- `project resource open`（平台相关自动打开目录/文件）。
-- 资源导入错误报告文件（JSON/CSV）。
+## 验收关注点
+- `python inv.py --help` 正常。
+- API 与 UI 指向同一数据库文件时，数据读写一致。
+- 写入冲突时返回清晰的数据库锁定错误。
