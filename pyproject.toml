@@ -5,6 +5,8 @@ description = "LabInventory SQLite CLI + FastAPI + Streamlit"
 authors = ["LabInventory Team"]
 readme = "README.md"
 packages = [
+  { include = "backend" },
+  { include = "frontend" },
   { include = "app" },
   { include = "ui" }
 ]

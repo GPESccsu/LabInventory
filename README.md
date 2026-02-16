@@ -3,7 +3,20 @@
 本项目基于 SQLite，保留原有 `inv.py` CLI 能力，并新增：
 - FastAPI 后端（HTTP API）
 - Streamlit 前端（中文 Web UI）
-- 统一的 API 数据模型定义：`app/schemas.py`
+- 统一的 API 数据模型定义：`backend/app/schemas.py`（并保留 `app/` 兼容入口）
+
+
+## 目录结构（前后端分离）
+
+```text
+backend/
+  app/                  # 后端核心：CLI 业务、API、DB、Schema
+frontend/
+  streamlit_app.py      # 前端 Streamlit 页面
+app/                    # 兼容层（转发到 backend.app）
+ui/                     # 兼容层（转发到 frontend）
+inv.py                  # CLI 兼容入口
+```
 
 ## 1. 安装依赖（Poetry）
 
@@ -19,13 +32,13 @@ poetry install
 ### 启动 FastAPI
 
 ```bash
-poetry run uvicorn app.api:app --host 0.0.0.0 --port 8000
+poetry run uvicorn backend.app.api:app --host 0.0.0.0 --port 8000
 ```
 
 ### 启动 Streamlit
 
 ```bash
-poetry run streamlit run ui/streamlit_app.py
+poetry run streamlit run frontend/streamlit_app.py
 ```
 
 > Streamlit 默认调用 `http://127.0.0.1:8000`，可通过 `LABINV_API_BASE` 覆盖。
