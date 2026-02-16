@@ -1,0 +1,1 @@
+"""LabInventory frontend modules."""
