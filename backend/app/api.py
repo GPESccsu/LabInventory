@@ -11,11 +11,7 @@ from backend.app.schemas import (
     AllocActionResponse,
     BomBatchRequest,
     GenericResult,
-    HealthResponse,
     ImportResponse,
-    LedgerResponse,
-    LocationListResponse,
-    PartListResponse,
     ProjectAllocResponse,
     ProjectListResponse,
     ProjectResponse,
@@ -27,11 +23,6 @@ from backend.app.schemas import (
     ResourceDeleteRequest,
     ResourceListResponse,
     ResourceUpsertRequest,
-    StockAdjustRequest,
-    StockInRequest,
-    StockListResponse,
-    StockMoveRequest,
-    StockOutRequest,
 )
 
 DB_PATH = os.getenv("LABINV_DB", "./lab_inventory.db")
@@ -54,100 +45,6 @@ def _http_error(exc: Exception):
         raise HTTPException(status_code=409, detail=str(exc))
     raise HTTPException(status_code=400, detail=str(exc))
 
-
-# --- Health ---
-
-@app.get("/api/health", response_model=HealthResponse)
-def health():
-    try:
-        return service.health()
-    except Exception as exc:
-        _http_error(exc)
-
-
-# --- Parts ---
-
-@app.get("/api/parts", response_model=PartListResponse)
-def search_parts(query: str = Query(default="")):
-    try:
-        return {"items": service.search_parts(query)}
-    except Exception as exc:
-        _http_error(exc)
-
-
-# --- Stock ---
-
-@app.get("/api/stock", response_model=StockListResponse)
-def list_stock(query: str = Query(default=""), location: str = Query(default="")):
-    try:
-        return {"items": service.list_stock(query, location)}
-    except Exception as exc:
-        _http_error(exc)
-
-
-@app.post("/api/stock/in", response_model=GenericResult)
-def api_stock_in(req: StockInRequest):
-    try:
-        service.stock_in(req.mpn, req.location, req.qty, req.condition, req.note)
-        return {"ok": True, "detail": f"入库成功：{req.mpn} @ {req.location} +{req.qty}"}
-    except Exception as exc:
-        _http_error(exc)
-
-
-@app.post("/api/stock/out", response_model=GenericResult)
-def api_stock_out(req: StockOutRequest):
-    try:
-        service.stock_out(req.mpn, req.location, req.qty, req.project_code, req.ref, req.note, req.operator)
-        return {"ok": True, "detail": f"出库成功：{req.mpn} @ {req.location} -{req.qty}"}
-    except Exception as exc:
-        _http_error(exc)
-
-
-@app.post("/api/stock/move", response_model=GenericResult)
-def api_stock_move(req: StockMoveRequest):
-    try:
-        service.stock_move(req.mpn, req.from_location, req.to_location, req.qty, req.note, req.operator)
-        return {"ok": True, "detail": f"移库成功：{req.mpn} {req.from_location} → {req.to_location} qty={req.qty}"}
-    except Exception as exc:
-        _http_error(exc)
-
-
-@app.post("/api/stock/adjust", response_model=GenericResult)
-def api_stock_adjust(req: StockAdjustRequest):
-    try:
-        service.stock_adjust(req.mpn, req.location, add_qty=req.add_qty, sub_qty=req.sub_qty, note=req.note, ref=req.ref, operator=req.operator)
-        mode = "add" if req.add_qty > 0 else "sub"
-        v = req.add_qty if req.add_qty > 0 else req.sub_qty
-        return {"ok": True, "detail": f"调整成功：{req.mpn} @ {req.location} {mode} {v}"}
-    except Exception as exc:
-        _http_error(exc)
-
-
-# --- Locations ---
-
-@app.get("/api/locations", response_model=LocationListResponse)
-def list_locations():
-    try:
-        return {"items": service.list_locations()}
-    except Exception as exc:
-        _http_error(exc)
-
-
-# --- Ledger ---
-
-@app.get("/api/ledger", response_model=LedgerResponse)
-def query_ledger(
-    project: str = Query(default=""),
-    mpn: str = Query(default=""),
-    since: str = Query(default=""),
-):
-    try:
-        return {"items": service.query_ledger(project, mpn, since)}
-    except Exception as exc:
-        _http_error(exc)
-
-
-# --- Projects ---
 
 @app.post("/api/projects", response_model=ProjectResponse)
 def upsert_project(req: ProjectUpsertRequest):
@@ -222,8 +119,6 @@ def consume(alloc_id: int, req: AllocActionRequest):
         _http_error(exc)
 
 
-# --- Resources ---
-
 @app.post("/api/projects/{code}/resources", response_model=GenericResult)
 def add_resource(code: str, req: ResourceUpsertRequest):
     try:
@@ -257,8 +152,6 @@ def check_resource(code: str):
     except Exception as exc:
         _http_error(exc)
 
-
-# --- XLSX Import ---
 
 @app.post("/api/projects/resources/import-xlsx", response_model=ImportResponse)
 async def import_resources_xlsx(

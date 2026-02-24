@@ -25,15 +25,6 @@ python-multipart = "^0.0.20"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"
-httpx = "^0.28.1"
-
-[tool.poetry.scripts]
-labinv = "backend.app.inv:main"
-labinv-api = "backend.app.api:main"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]
