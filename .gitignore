@@ -1,1 +1,4 @@
 /datasheets/
+__pycache__/
+*.pyc
+*.pyo
