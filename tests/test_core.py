@@ -1,38 +1,9 @@
-"""Tests for the core inventory service using an in-memory SQLite database."""
+"""Tests for the core inventory service using a temporary SQLite database."""
 from __future__ import annotations
-
-import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from backend.app.core import InventoryError, InventoryService, NotFoundError
-from backend.app.db import connect
-from backend.app.inv import init_db
-
-
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Create a temporary database with schema initialized."""
-    p = tmp_path / "test.db"
-    conn = connect(p)
-    init_db(conn)
-    # seed some locations
-    conn.execute("INSERT OR IGNORE INTO locations (location, note) VALUES ('C409-G01-S01-P01', 'test loc 1')")
-    conn.execute("INSERT OR IGNORE INTO locations (location, note) VALUES ('C409-G01-S01-P02', 'test loc 2')")
-    # seed a part
-    conn.execute(
-        "INSERT INTO parts (mpn, name, category, package, params) VALUES ('TEST-001', '测试电阻', '电阻', '0402', '10kΩ')"
-    )
-    conn.commit()
-    conn.close()
-    return p
-
-
-@pytest.fixture
-def svc(db_path: Path) -> InventoryService:
-    return InventoryService(db_path)
+from backend.app.core import InventoryService, NotFoundError
 
 
 class TestHealth:

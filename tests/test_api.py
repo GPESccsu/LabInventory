@@ -1,39 +1,7 @@
 """Tests for the FastAPI endpoints using TestClient."""
 from __future__ import annotations
 
-import os
-import tempfile
-from pathlib import Path
-
-import pytest
 from fastapi.testclient import TestClient
-
-from backend.app.db import connect
-from backend.app.inv import init_db
-
-
-@pytest.fixture
-def client(tmp_path: Path):
-    """Create a test client with a temporary database."""
-    db_path = tmp_path / "test_api.db"
-    conn = connect(db_path)
-    init_db(conn)
-    conn.execute("INSERT OR IGNORE INTO locations (location, note) VALUES ('C409-G01-S01-P01', 'test')")
-    conn.execute("INSERT OR IGNORE INTO locations (location, note) VALUES ('C409-G01-S01-P02', 'test2')")
-    conn.execute("INSERT INTO parts (mpn, name, category) VALUES ('API-PART-001', 'API测试电阻', '电阻')")
-    conn.commit()
-    conn.close()
-
-    os.environ["LABINV_DB"] = str(db_path)
-
-    # Re-import to pick up the new DB_PATH
-    import importlib
-    import backend.app.api as api_mod
-    api_mod.DB_PATH = str(db_path)
-    api_mod.service = api_mod.InventoryService(str(db_path))
-
-    with TestClient(api_mod.app) as c:
-        yield c
 
 
 class TestHealthEndpoint:
@@ -53,37 +21,42 @@ class TestPartsEndpoint:
         assert len(items) >= 1
 
     def test_search_parts_with_query(self, client: TestClient):
-        r = client.get("/api/parts", params={"query": "API-PART"})
+        r = client.get("/api/parts", params={"query": "TEST-001"})
         assert r.status_code == 200
         assert len(r.json()["items"]) >= 1
 
 
 class TestStockEndpoints:
     def test_stock_in_and_list(self, client: TestClient):
-        r = client.post("/api/stock/in", json={"mpn": "API-PART-001", "location": "C409-G01-S01-P01", "qty": 10})
+        r = client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 10})
         assert r.status_code == 200
         assert r.json()["ok"]
 
-        r = client.get("/api/stock", params={"query": "API-PART"})
+        r = client.get("/api/stock", params={"query": "TEST-001"})
         assert r.status_code == 200
         items = r.json()["items"]
         assert len(items) >= 1
         assert items[0]["qty"] == 10
 
     def test_stock_out(self, client: TestClient):
-        client.post("/api/stock/in", json={"mpn": "API-PART-001", "location": "C409-G01-S01-P01", "qty": 20})
-        r = client.post("/api/stock/out", json={"mpn": "API-PART-001", "location": "C409-G01-S01-P01", "qty": 5})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 20})
+        r = client.post("/api/stock/out", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 5})
         assert r.status_code == 200
 
     def test_stock_move(self, client: TestClient):
-        client.post("/api/stock/in", json={"mpn": "API-PART-001", "location": "C409-G01-S01-P01", "qty": 20})
-        r = client.post("/api/stock/move", json={"mpn": "API-PART-001", "from_location": "C409-G01-S01-P01", "to_location": "C409-G01-S01-P02", "qty": 5})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 20})
+        r = client.post("/api/stock/move", json={"mpn": "TEST-001", "from_location": "C409-G01-S01-P01", "to_location": "C409-G01-S01-P02", "qty": 5})
         assert r.status_code == 200
 
     def test_stock_adjust(self, client: TestClient):
-        client.post("/api/stock/in", json={"mpn": "API-PART-001", "location": "C409-G01-S01-P01", "qty": 10})
-        r = client.post("/api/stock/adjust", json={"mpn": "API-PART-001", "location": "C409-G01-S01-P01", "add_qty": 5, "sub_qty": 0, "note": "test adjust"})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 10})
+        r = client.post("/api/stock/adjust", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "add_qty": 5, "sub_qty": 0, "note": "test adjust"})
         assert r.status_code == 200
+
+    def test_stock_out_insufficient_returns_400(self, client: TestClient):
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 5})
+        r = client.post("/api/stock/out", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 100})
+        assert r.status_code == 400
 
 
 class TestLocationEndpoint:
@@ -96,8 +69,8 @@ class TestLocationEndpoint:
 
 class TestLedgerEndpoint:
     def test_query_ledger(self, client: TestClient):
-        client.post("/api/stock/in", json={"mpn": "API-PART-001", "location": "C409-G01-S01-P01", "qty": 5})
-        r = client.get("/api/ledger", params={"mpn": "API-PART-001"})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 5})
+        r = client.get("/api/ledger", params={"mpn": "TEST-001"})
         assert r.status_code == 200
         items = r.json()["items"]
         assert len(items) >= 1
@@ -125,3 +98,52 @@ class TestProjectEndpoints:
     def test_project_not_found(self, client: TestClient):
         r = client.get("/api/projects/NOPE")
         assert r.status_code == 404
+
+    def test_set_bom(self, client: TestClient):
+        client.post("/api/projects", json={"code": "PJ-BOM", "name": "BOM测试"})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 100})
+        r = client.post("/api/projects/PJ-BOM/bom", json={"items": [{"mpn": "TEST-001", "req_qty": 10}]})
+        assert r.status_code == 200
+        assert r.json()["ok"]
+
+    def test_project_status(self, client: TestClient):
+        client.post("/api/projects", json={"code": "PJ-STA", "name": "状态测试"})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 50})
+        client.post("/api/projects/PJ-STA/bom", json={"items": [{"mpn": "TEST-001", "req_qty": 5}]})
+        r = client.get("/api/projects/PJ-STA/status")
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert len(items) == 1
+        assert items[0]["req_qty"] == 5
+
+
+class TestAllocEndpoints:
+    def test_reserve_and_release(self, client: TestClient):
+        client.post("/api/projects", json={"code": "PJ-AL", "name": "预留API测试"})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 100})
+        r = client.post("/api/projects/PJ-AL/reserve", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 5})
+        assert r.status_code == 200
+        alloc_id = r.json()["alloc_id"]
+
+        r = client.get("/api/projects/PJ-AL/allocs")
+        assert r.status_code == 200
+        assert len(r.json()["items"]) == 1
+
+        r = client.post(f"/api/allocs/{alloc_id}/release", json={"note": "release test"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "released"
+
+    def test_reserve_and_consume(self, client: TestClient):
+        client.post("/api/projects", json={"code": "PJ-CO", "name": "消耗API测试"})
+        client.post("/api/stock/in", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 100})
+        r = client.post("/api/projects/PJ-CO/reserve", json={"mpn": "TEST-001", "location": "C409-G01-S01-P01", "qty": 10})
+        alloc_id = r.json()["alloc_id"]
+
+        r = client.post(f"/api/allocs/{alloc_id}/consume", json={"note": "consume test"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "consumed"
+
+        # stock should be reduced
+        r = client.get("/api/stock", params={"query": "TEST-001"})
+        total = sum(item["qty"] for item in r.json()["items"])
+        assert total == 90
