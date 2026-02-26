@@ -79,3 +79,13 @@ python inv.py --db ./lab_inventory.db proj-status --proj PJ-001
 - CLI/API/UI 共享同一个 SQLite 文件，数据实时一致。
 - 连接默认启用：`WAL`、`synchronous=NORMAL`、`busy_timeout=30000`、`timeout=30`、`foreign_keys=ON`。
 - 当数据库被其他进程长期占用（如 DB Browser）时，API 会返回明确错误：数据库被锁定，请稍后重试。
+
+
+## 6. 给 Claude 的高效协作计划
+
+如果你希望用更少轮次让 Claude 一次完成更多工作，请先阅读：
+
+- `docs/CLAUDE_高效协作计划.md`
+
+该文档提供了可直接复制的提示词模板、分阶段路线图与验收策略。
+
