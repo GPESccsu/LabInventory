@@ -12,7 +12,11 @@ from backend.app.schemas import (
     AllocActionResponse,
     BomBatchRequest,
     GenericResult,
+    HealthResponse,
     ImportResponse,
+    LedgerResponse,
+    LocationListResponse,
+    PartListResponse,
     ProjectAllocResponse,
     ProjectListResponse,
     ProjectResponse,
@@ -24,6 +28,11 @@ from backend.app.schemas import (
     ResourceDeleteRequest,
     ResourceListResponse,
     ResourceUpsertRequest,
+    StockAdjustRequest,
+    StockInRequest,
+    StockListResponse,
+    StockMoveRequest,
+    StockOutRequest,
 )
 
 DB_PATH = os.getenv("LABINV_DB", "./lab_inventory.db")
