@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from backend.app.core import InventoryService
 from backend.app.db import connect, init_db
@@ -35,7 +34,15 @@ def svc(db_path: Path) -> InventoryService:
 
 @pytest.fixture
 def client(db_path: Path):
-    """Create a FastAPI TestClient backed by the temporary database."""
+    """Create a FastAPI TestClient backed by the temporary database.
+
+    Skips if fastapi is not installed so that core/cli tests are unaffected.
+    """
+    try:
+        from fastapi.testclient import TestClient
+    except ImportError:
+        pytest.skip("fastapi is not installed — skipping API tests")
+
     os.environ["LABINV_DB"] = str(db_path)
 
     import backend.app.api as api_mod

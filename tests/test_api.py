@@ -1,6 +1,9 @@
 """Tests for the FastAPI endpoints using TestClient."""
 from __future__ import annotations
 
+import pytest
+
+fastapi = pytest.importorskip("fastapi", reason="fastapi is not installed — skipping API tests")
 from fastapi.testclient import TestClient
 
 
