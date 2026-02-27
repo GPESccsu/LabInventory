@@ -83,6 +83,7 @@ python inv.py --db ./lab_inventory.db --help
 
 ### 初始化库位
 
+
 ```bash
 # 按 C409 房间规格生成标准库位编码（G01 三层 / G02 一层 / 每层 10 位）
 python inv.py --db ./lab_inventory.db init-locations --room C409

@@ -12,11 +12,7 @@ from backend.app.schemas import (
     AllocActionResponse,
     BomBatchRequest,
     GenericResult,
-    HealthResponse,
     ImportResponse,
-    LedgerResponse,
-    LocationListResponse,
-    PartListResponse,
     ProjectAllocResponse,
     ProjectListResponse,
     ProjectResponse,
@@ -28,11 +24,6 @@ from backend.app.schemas import (
     ResourceDeleteRequest,
     ResourceListResponse,
     ResourceUpsertRequest,
-    StockAdjustRequest,
-    StockInRequest,
-    StockListResponse,
-    StockMoveRequest,
-    StockOutRequest,
 )
 
 DB_PATH = os.getenv("LABINV_DB", "./lab_inventory.db")
@@ -60,6 +51,7 @@ async def inventory_error_handler(_request: Request, exc: InventoryError) -> JSO
 @app.exception_handler(RuntimeError)
 async def runtime_error_handler(_request: Request, exc: RuntimeError) -> JSONResponse:
     return JSONResponse(status_code=400, content={"detail": str(exc)})
+
 
 
 # --- Health ---
@@ -175,8 +167,6 @@ def consume(alloc_id: int, req: AllocActionRequest):
     return service.consume_alloc(alloc_id, req.note)
 
 
-# --- Resources ---
-
 @app.post("/api/projects/{code}/resources", response_model=GenericResult)
 def add_resource(code: str, req: ResourceUpsertRequest):
     service.upsert_resource(code, req.type, req.name, req.uri, req.is_dir, req.tags, req.note, req.no_check)
@@ -198,8 +188,6 @@ def delete_resource(code: str, req: ResourceDeleteRequest):
 def check_resource(code: str):
     return {"items": service.check_resource(code)}
 
-
-# --- XLSX Import ---
 
 @app.post("/api/projects/resources/import-xlsx", response_model=ImportResponse)
 async def import_resources_xlsx(

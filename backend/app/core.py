@@ -285,7 +285,6 @@ class InventoryService:
             raise _normalize_error(exc) from exc
         finally:
             Path(tmp.name).unlink(missing_ok=True)
-
     # --- Parts & Stock ---
 
     def search_parts(self, query: str = "") -> list[dict[str, Any]]:
@@ -441,3 +440,4 @@ class InventoryService:
             raise
         except Exception as exc:
             raise _normalize_error(exc) from exc
+
