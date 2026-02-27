@@ -165,3 +165,53 @@ class TestProjectBomAndAlloc:
         stock = svc.list_stock("TEST-001")
         total = sum(r["qty"] for r in stock)
         assert total == 95
+
+    def test_over_reservation_blocked(self, svc: InventoryService):
+        """Over-reserving beyond available stock should be blocked by DB trigger."""
+        svc.upsert_project("PJ-OVER", "超预留测试")
+        svc.stock_in("TEST-001", "C409-G01-S01-P01", 5)
+        # Reserve all 5
+        svc.reserve("PJ-OVER", "TEST-001", "C409-G01-S01-P01", 5)
+        # Attempting to reserve 1 more should fail
+        with pytest.raises(Exception):
+            svc.reserve("PJ-OVER", "TEST-001", "C409-G01-S01-P01", 1)
+
+    def test_consume_non_reserved_alloc_fails(self, svc: InventoryService):
+        """Consuming an already-released allocation should raise an error."""
+        svc.upsert_project("PJ-CREL", "消耗已释放测试")
+        svc.stock_in("TEST-001", "C409-G01-S01-P01", 50)
+        result = svc.reserve("PJ-CREL", "TEST-001", "C409-G01-S01-P01", 5)
+        alloc_id = result["alloc_id"]
+        svc.release_alloc(alloc_id)
+        with pytest.raises(Exception, match="reserved"):
+            svc.consume_alloc(alloc_id)
+
+
+class TestStockEdgeCases:
+    def test_stock_move_same_location_fails(self, svc: InventoryService):
+        """Moving stock to the same location should raise an error."""
+        svc.stock_in("TEST-001", "C409-G01-S01-P01", 10)
+        with pytest.raises(RuntimeError, match="不能相同"):
+            svc.stock_move("TEST-001", "C409-G01-S01-P01", "C409-G01-S01-P01", 5)
+
+    def test_stock_adjust_requires_note(self, svc: InventoryService):
+        """stock_adjust with empty note should raise an error."""
+        svc.stock_in("TEST-001", "C409-G01-S01-P01", 10)
+        with pytest.raises(RuntimeError, match="note"):
+            svc.stock_adjust("TEST-001", "C409-G01-S01-P01", add_qty=5, note="")
+
+    def test_stock_move_insufficient_source(self, svc: InventoryService):
+        """Moving more stock than available in source should fail."""
+        svc.stock_in("TEST-001", "C409-G01-S01-P01", 3)
+        with pytest.raises(RuntimeError, match="库存不足"):
+            svc.stock_move("TEST-001", "C409-G01-S01-P01", "C409-G01-S01-P02", 10)
+
+    def test_release_already_released_alloc_fails(self, svc: InventoryService):
+        """Releasing an already-released allocation should raise an error."""
+        svc.upsert_project("PJ-RR", "重复释放测试")
+        svc.stock_in("TEST-001", "C409-G01-S01-P01", 50)
+        result = svc.reserve("PJ-RR", "TEST-001", "C409-G01-S01-P01", 5)
+        alloc_id = result["alloc_id"]
+        svc.release_alloc(alloc_id)
+        with pytest.raises(Exception, match="reserved"):
+            svc.release_alloc(alloc_id)
