@@ -149,3 +149,118 @@ class ResourceCheckResponse(BaseModel):
 class ImportResponse(BaseModel):
     ok: int
     err: int
+
+
+# --- Health ---
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    db_path: str
+    parts_count: int
+    stock_rows: int
+    projects_count: int
+
+
+# --- Parts ---
+
+class PartRow(BaseModel):
+    id: int
+    mpn: str
+    name: str
+    category: str
+    package: str | None = None
+    params: str | None = None
+    unit: str = "pcs"
+    url: str | None = None
+    datasheet: str | None = None
+    note: str | None = None
+    created_at: str
+
+
+class PartListResponse(BaseModel):
+    items: list[PartRow]
+
+
+# --- Stock ---
+
+class StockRow(BaseModel):
+    stock_id: int
+    part_id: int
+    mpn: str
+    part_name: str
+    location: str
+    qty: int
+    condition: str | None = None
+    updated_at: str
+
+
+class StockListResponse(BaseModel):
+    items: list[StockRow]
+
+
+class StockInRequest(BaseModel):
+    mpn: str
+    location: str
+    qty: int = Field(gt=0)
+    condition: str = "new"
+    note: str = ""
+
+
+class StockOutRequest(BaseModel):
+    mpn: str
+    location: str
+    qty: int = Field(gt=0)
+    project_code: str = ""
+    ref: str = ""
+    note: str = ""
+    operator: str = ""
+
+
+class StockMoveRequest(BaseModel):
+    mpn: str
+    from_location: str
+    to_location: str
+    qty: int = Field(gt=0)
+    note: str = ""
+    operator: str = ""
+
+
+class StockAdjustRequest(BaseModel):
+    mpn: str
+    location: str
+    add_qty: int = 0
+    sub_qty: int = 0
+    note: str = ""
+    ref: str = ""
+    operator: str = ""
+
+
+# --- Locations ---
+
+class LocationRow(BaseModel):
+    location: str
+    note: str | None = None
+
+
+class LocationListResponse(BaseModel):
+    items: list[LocationRow]
+
+
+# --- Ledger ---
+
+class LedgerRow(BaseModel):
+    created_at: str
+    doc_type: str
+    project_code: str | None = None
+    mpn: str
+    from_location: str | None = None
+    to_location: str | None = None
+    qty: int
+    ref: str | None = None
+    operator: str | None = None
+    note: str | None = None
+
+
+class LedgerResponse(BaseModel):
+    items: list[LedgerRow]

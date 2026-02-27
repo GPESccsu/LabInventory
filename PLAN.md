@@ -45,3 +45,34 @@
 - **统一可选依赖错误提示格式**：`_load_openpyxl()` 和新增 `_load_lcsc_deps()` 均采用”poetry add（推荐）/ pip install”双行提示。
 - **新增 CLI smoke 测试**：`tests/test_cli_smoke.py`，覆盖主帮助和关键子命令的 `--help` 返回码检查，以及模块 import 不报错验证。
 - **更新 README.md**：安装小节增加”可选依赖说明”段落。
+
+## Phase 2（API 契约修复 + 测试闭环）已完成
+
+### 目标
+修复 API 层因 schema 缺失导致的 NameError 导入崩溃，补全测试覆盖。
+
+### 问题根因
+`backend/app/api.py` 的路由装饰器引用了 9 个未在 `schemas.py` 定义的 Pydantic 模型（`HealthResponse`、`PartListResponse`、`StockListResponse`、`StockInRequest`、`StockOutRequest`、`StockMoveRequest`、`StockAdjustRequest`、`LocationListResponse`、`LedgerResponse`），导致 `import backend.app.api` 立即抛出 `NameError`。此前 API 测试因 fastapi 未安装在测试环境而全部 skip，问题未被发现。
+
+### 改动文件
+| 文件 | 变更说明 |
+|------|---------|
+| `backend/app/schemas.py` | 新增 13 个 Pydantic 模型（`HealthResponse`、`PartRow`、`PartListResponse`、`StockRow`、`StockListResponse`、`StockInRequest`、`StockOutRequest`、`StockMoveRequest`、`StockAdjustRequest`、`LocationRow`、`LocationListResponse`、`LedgerRow`、`LedgerResponse`）|
+| `backend/app/api.py` | 补全 import 块，将 9 个新增模型加入导入列表 |
+| `tests/test_api_import.py` | 新增 API import smoke 测试（3 项）+ init_db 幂等测试（3 项）|
+
+### 风险评估
+- **无破坏性变更**：仅新增 schema 类与测试文件，未修改任何现有逻辑。
+- **向后兼容**：所有现有 CLI 子命令、数据库表/视图/触发器均未改动。
+
+### 验收结果
+```
+poetry run python -c “import backend.app.api”  → OK
+poetry run pytest -v                           → 65 passed, 0 failed
+python inv.py --help                           → exit 0
+```
+
+### 回滚
+```bash
+git revert <commit-hash>
+```

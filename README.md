@@ -315,7 +315,26 @@ python inv.py --db ./lab_inventory.db schema-export --format md --out docs/schem
 poetry run pytest
 ```
 
-测试覆盖核心服务层（`test_core.py`）、API 端点（`test_api.py`）、CLI 入口（`test_cli.py`），共 36 个用例。
+测试覆盖核心服务层（`test_core.py`）、API 端点（`test_api.py`）、CLI 入口（`test_cli_smoke.py`）、API 契约校验（`test_api_import.py`）、事务完整性（`test_txn_integrity.py`），共 65 个用例。
+
+### 最小验收命令
+
+```bash
+# 1. CLI 入口可用
+python inv.py --help
+
+# 2. API 模块可导入（无 NameError）
+poetry run python -c "import backend.app.api"
+
+# 3. 全量测试通过
+poetry run pytest -v
+```
+
+### 常见测试失败处理
+
+- **`ModuleNotFoundError: No module named 'fastapi'`**：运行 `poetry install` 安装全部依赖。
+- **API 测试被跳过（skipped）**：同上，确保 fastapi 已安装。
+- **`NameError: name 'XxxResponse' is not defined`**：`schemas.py` 缺少模型定义，检查 `backend/app/schemas.py` 是否包含该类。
 
 ---
 
