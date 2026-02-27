@@ -103,6 +103,11 @@ python inv.py --db ./lab_inventory.db init-locations --room C409
 python inv.py --db ./lab_inventory.db stock-in \
   --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 100 \
   --condition new --note "首次采购"
+
+# 可选参数：--proj（关联项目）、--ref（参考单号）、--operator（操作人）
+python inv.py --db ./lab_inventory.db stock-in \
+  --mpn SN74LVC1G08DBVR --loc C409-G01-S01-P01 --qty 50 \
+  --proj PJ-001 --ref "PO-2026-001" --operator 张三
 ```
 
 ### 物料出库

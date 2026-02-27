@@ -1772,6 +1772,9 @@ def main():
     p.add_argument("--qty", type=int, required=True)
     p.add_argument("--condition", default="new")
     p.add_argument("--note", default="")
+    p.add_argument("--proj", default="", help="可选项目 code")
+    p.add_argument("--ref", default="", help="可选参考单号")
+    p.add_argument("--operator", default="", help="可选操作人")
 
     p = sub.add_parser("stock-out", help="出库（按库位扣减库存）")
     p.add_argument("--mpn", required=True)
@@ -1951,7 +1954,8 @@ def main():
             return
 
         if args.cmd == "stock-in":
-            stock_in(conn, args.mpn, args.loc, args.qty, args.condition, args.note)
+            stock_in(conn, args.mpn, args.loc, args.qty, args.condition, args.note,
+                     project_code=args.proj, ref=args.ref, operator=args.operator)
             conn.commit()
             print(f"入库成功：{args.mpn} @ {args.loc} +{args.qty}")
             return
