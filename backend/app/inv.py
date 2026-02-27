@@ -11,9 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-import requests
-from bs4 import BeautifulSoup
-
 from backend.app.project_resources import (
     check_resources,
     import_resources_xlsx,
@@ -455,9 +452,30 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------
-# 立创抓取 + 数据手册下载
+# 立创抓取 + 数据手册下载（可选依赖懒加载）
 # ---------------------------
-def find_value_by_label(soup: BeautifulSoup, label: str) -> str:
+def _load_lcsc_deps():
+    """懒加载 requests 和 BeautifulSoup，仅在 LCSC 功能使用时触发。"""
+    try:
+        import requests as _requests
+    except ImportError as e:
+        raise RuntimeError(
+            "缺少依赖 requests，请先安装：\n"
+            "  poetry add requests        （推荐）\n"
+            "  pip install requests"
+        ) from e
+    try:
+        from bs4 import BeautifulSoup as _BS
+    except ImportError as e:
+        raise RuntimeError(
+            "缺少依赖 beautifulsoup4，请先安装：\n"
+            "  poetry add beautifulsoup4   （推荐）\n"
+            "  pip install beautifulsoup4"
+        ) from e
+    return _requests, _BS
+
+
+def find_value_by_label(soup: 'Any', label: str) -> str:
     text = soup.get_text("\n", strip=True)
     m = re.search(rf"{re.escape(label)}\s*\n([^\n]+)", text)
     if m:
@@ -468,7 +486,7 @@ def find_value_by_label(soup: BeautifulSoup, label: str) -> str:
     return ""
 
 
-def parse_params_table(soup: BeautifulSoup) -> dict:
+def parse_params_table(soup: 'Any') -> dict:
     text = soup.get_text("\n", strip=True)
     if "商品参数" not in text:
         return {}
@@ -497,7 +515,7 @@ def parse_params_table(soup: BeautifulSoup) -> dict:
     return pairs
 
 
-def find_datasheet_url(soup: BeautifulSoup, base_url: str) -> str:
+def find_datasheet_url(soup: 'Any', base_url: str) -> str:
     candidates = []
 
     for a in soup.find_all("a", href=True):
@@ -533,7 +551,7 @@ def find_datasheet_url(soup: BeautifulSoup, base_url: str) -> str:
     return ""
 
 
-def download_pdf(session: requests.Session, pdf_url: str, out_path: Path) -> bool:
+def download_pdf(session: 'Any', pdf_url: str, out_path: Path) -> bool:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with session.get(pdf_url, stream=True, timeout=30) as r:
         r.raise_for_status()
@@ -574,6 +592,8 @@ class LcscItem:
 
 
 def lcsc_fetch_and_parse(url: str, datasheets_dir: Path) -> LcscItem:
+    requests, BeautifulSoup = _load_lcsc_deps()
+
     session = requests.Session()
     session.headers.update({
         "User-Agent": (
@@ -1219,8 +1239,12 @@ def _load_openpyxl():
     try:
         from openpyxl import Workbook, load_workbook
         return Workbook, load_workbook
-    except Exception as e:
-        raise RuntimeError("缺少依赖 openpyxl，请先安装：python -m pip install openpyxl") from e
+    except ImportError as e:
+        raise RuntimeError(
+            "缺少依赖 openpyxl，请先安装：\n"
+            "  poetry add openpyxl          （推荐）\n"
+            "  pip install openpyxl"
+        ) from e
 
 
 def txn_export_xlsx_template(out_path: Path):
@@ -1656,6 +1680,8 @@ def import_lcsc_file_to_parts_and_stock(
     )
 
     datasheets_dir = datasheets_dir or (Path(conn.execute("PRAGMA database_list").fetchone()[2]).parent / "datasheets")
+
+    requests, BeautifulSoup = _load_lcsc_deps()
 
     session = requests.Session()
     session.headers.update({

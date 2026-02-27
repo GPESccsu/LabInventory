@@ -36,4 +36,12 @@
   - 给出“低额度消耗”的协作方法（任务包模板化、先计划后编码、分批次可合并、强制自检闭环）。
   - 提供三类可直接复制的提示词模板（单批次开发、重构方案、低成本巡检）。
   - 给出按 ROI 排序的 Phase 1~4 优化路线，便于后续持续迭代。
-- 更新 `README.md`：增加“给 Claude 的高效协作计划”入口，方便快速使用模板。
+- 更新 `README.md`：增加”给 Claude 的高效协作计划”入口，方便快速使用模板。
+
+## Phase 1（可运行性修复）已完成
+
+- **顶层可选依赖改为懒加载**：`requests` 和 `beautifulsoup4` 从顶层 import 移至 `_load_lcsc_deps()` 懒加载函数，仅在 LCSC 功能调用时触发。
+- **`python inv.py --help` 在缺 bs4 时不再因为导入失败而崩溃**：所有 LCSC 相关函数的类型注解改为 `Any`（字符串形式），避免运行时名称解析。
+- **统一可选依赖错误提示格式**：`_load_openpyxl()` 和新增 `_load_lcsc_deps()` 均采用”poetry add（推荐）/ pip install”双行提示。
+- **新增 CLI smoke 测试**：`tests/test_cli_smoke.py`，覆盖主帮助和关键子命令的 `--help` 返回码检查，以及模块 import 不报错验证。
+- **更新 README.md**：安装小节增加”可选依赖说明”段落。

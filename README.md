@@ -43,6 +43,14 @@ LabInventory/
 poetry install
 ```
 
+### 可选依赖说明
+
+`poetry install` 会安装全部依赖（包括 LCSC 抓取和 XLSX 导入所需的包）。
+
+- **核心 CLI**（库存/项目/流水/Schema 等）不需要 `requests`、`beautifulsoup4` 或 `openpyxl`，可在最小依赖环境下正常运行。
+- **LCSC 导入**（`lcsc` 子命令）需要 `requests` + `beautifulsoup4`；缺少时执行该命令会提示安装方法。
+- **XLSX 导入导出**（`txn-export-xlsx`、`txn-import-xlsx`）需要 `openpyxl`；缺少时同样会提示安装方法。
+
 ---
 
 ## 启动
