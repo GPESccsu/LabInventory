@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import csv
 import json
@@ -41,10 +43,6 @@ def safe_filename(name: str) -> str:
 def normalize_url(url: str) -> str:
     p = urlparse(url)
     return f"{p.scheme}://{p.netloc}{p.path}"
-
-
-def now_local_sql() -> str:
-    return "datetime('now','localtime')"
 
 
 def resolve_input_path(raw_path: str, cwd: Path) -> Path:
@@ -446,13 +444,13 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return db_connect(db_path)
 
 
-def init_db(conn: sqlite3.Connection):
+def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(DDL)
     apply_migrations(conn)
     conn.commit()
 
 
-def apply_migrations(conn: sqlite3.Connection):
+def apply_migrations(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_DDL)
 
 
@@ -657,47 +655,47 @@ def lcsc_fetch_and_parse(url: str, datasheets_dir: Path) -> LcscItem:
 # ---------------------------
 # DB 操作函数（全部通过脚本）
 # ---------------------------
-def get_project_id(conn, code: str) -> int:
+def get_project_id(conn: sqlite3.Connection, code: str) -> int:
     r = conn.execute("SELECT id FROM projects WHERE code=?", (code,)).fetchone()
     if not r:
         raise RuntimeError(f"项目不存在：{code}")
     return int(r["id"])
 
 
-def get_part_id_by_mpn(conn, mpn: str) -> int:
+def get_part_id_by_mpn(conn: sqlite3.Connection, mpn: str) -> int:
     r = conn.execute("SELECT id FROM parts WHERE mpn=?", (mpn,)).fetchone()
     if not r:
         raise RuntimeError(f"物料不存在：{mpn}")
     return int(r["id"])
 
 
-def get_project_id_optional(conn, code: str = "") -> int | None:
+def get_project_id_optional(conn: sqlite3.Connection, code: str = "") -> int | None:
     code = clean_text(code)
     if not code:
         return None
     return get_project_id(conn, code)
 
 
-def assert_location_exists(conn, location: str):
+def assert_location_exists(conn: sqlite3.Connection, location: str) -> None:
     if conn.execute("SELECT 1 FROM locations WHERE location=?", (location,)).fetchone() is None:
         raise RuntimeError(f"库位不存在（locations 表里没有）：{location}")
 
 
-def _tx_begin(conn, tx_name: str = "inv_tx"):
+def _tx_begin(conn: sqlite3.Connection, tx_name: str = "inv_tx") -> None:
     conn.execute(f"SAVEPOINT {tx_name};")
 
 
-def _tx_commit(conn, tx_name: str = "inv_tx"):
+def _tx_commit(conn: sqlite3.Connection, tx_name: str = "inv_tx") -> None:
     conn.execute(f"RELEASE SAVEPOINT {tx_name};")
 
 
-def _tx_rollback(conn, tx_name: str = "inv_tx"):
+def _tx_rollback(conn: sqlite3.Connection, tx_name: str = "inv_tx") -> None:
     conn.execute(f"ROLLBACK TO SAVEPOINT {tx_name};")
     conn.execute(f"RELEASE SAVEPOINT {tx_name};")
 
 
 def write_ledger(
-    conn,
+    conn: sqlite3.Connection,
     *,
     doc_type: str,
     part_id: int,
@@ -729,7 +727,7 @@ def write_ledger(
     return doc_id
 
 
-def create_txn(conn, txn_type: str, project_code: str | None = None, ref: str = "", note: str = "", operator: str = "") -> int:
+def create_txn(conn: sqlite3.Connection, txn_type: str, project_code: str | None = None, ref: str = "", note: str = "", operator: str = "") -> int:
     txn_type = clean_text(txn_type).upper()
     if txn_type not in {"IN", "OUT", "ADJUST"}:
         raise RuntimeError(f"不支持的 txn_type：{txn_type}")
@@ -742,7 +740,7 @@ def create_txn(conn, txn_type: str, project_code: str | None = None, ref: str = 
 
 
 def add_txn_line(
-    conn,
+    conn: sqlite3.Connection,
     txn_id: int,
     mpn: str,
     location: str,
@@ -764,7 +762,7 @@ def add_txn_line(
     return int(cur.lastrowid)
 
 
-def apply_stock_delta(conn, *, part_id: int, location: str, qty_delta: int, condition: str = "new", note: str = ""):
+def apply_stock_delta(conn: sqlite3.Connection, *, part_id: int, location: str, qty_delta: int, condition: str = "new", note: str = "") -> None:
     if qty_delta == 0:
         raise RuntimeError("库存变化量不能为 0")
     row = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, location)).fetchone()
@@ -784,7 +782,7 @@ def apply_stock_delta(conn, *, part_id: int, location: str, qty_delta: int, cond
         )
 
 
-def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: str, url: str, datasheet: str, note: str) -> int:
+def upsert_part(conn: sqlite3.Connection, mpn: str, name: str, category: str, package: str, params: str, url: str, datasheet: str, note: str) -> int:
     row = conn.execute("SELECT id FROM parts WHERE mpn=?", (mpn,)).fetchone()
     if row:
         pid = int(row["id"])
@@ -811,7 +809,7 @@ def upsert_part(conn, mpn: str, name: str, category: str, package: str, params: 
 
 
 def stock_in(
-    conn,
+    conn: sqlite3.Connection,
     mpn: str,
     location: str,
     qty: int,
@@ -848,12 +846,12 @@ def stock_in(
         raise
 
 
-def add_stock(conn, mpn: str, location: str, qty: int, condition: str = "new", note: str = ""):
+def add_stock(conn: sqlite3.Connection, mpn: str, location: str, qty: int, condition: str = "new", note: str = "") -> None:
     # 兼容旧接口：默认作为入库处理，并同步写入 ledger(IN)
     stock_in(conn, mpn, location, qty, condition=condition, note=note)
 
 
-def stock_out(conn, mpn: str, location: str, qty: int, project_code: str = "", ref: str = "", note: str = "", operator: str = ""):
+def stock_out(conn: sqlite3.Connection, mpn: str, location: str, qty: int, project_code: str = "", ref: str = "", note: str = "", operator: str = "") -> None:
     if qty <= 0:
         raise RuntimeError("出库数量必须为正整数")
     assert_location_exists(conn, location)
@@ -881,7 +879,7 @@ def stock_out(conn, mpn: str, location: str, qty: int, project_code: str = "", r
         raise
 
 
-def stock_move(conn, mpn: str, from_location: str, to_location: str, qty: int, note: str = "", operator: str = ""):
+def stock_move(conn: sqlite3.Connection, mpn: str, from_location: str, to_location: str, qty: int, note: str = "", operator: str = "") -> None:
     if qty <= 0:
         raise RuntimeError("移库数量必须为正整数")
     if from_location == to_location:
@@ -889,28 +887,10 @@ def stock_move(conn, mpn: str, from_location: str, to_location: str, qty: int, n
     assert_location_exists(conn, from_location)
     assert_location_exists(conn, to_location)
     part_id = get_part_id_by_mpn(conn, mpn)
-    src = conn.execute("SELECT id, qty FROM stock WHERE part_id=? AND location=?", (part_id, from_location)).fetchone()
-    if not src:
-        raise RuntimeError(f"源库位无库存记录：part_id={part_id}, location={from_location}")
-    if int(src["qty"]) < qty:
-        raise RuntimeError(f"移库失败：源库位库存不足（stock={int(src['qty'])} < move={qty}）")
     _tx_begin(conn)
     try:
-        conn.execute(
-            "UPDATE stock SET qty=qty-?, updated_at=datetime('now','localtime') WHERE id=?",
-            (qty, int(src["id"])),
-        )
-        dst = conn.execute("SELECT id, qty, condition FROM stock WHERE part_id=? AND location=?", (part_id, to_location)).fetchone()
-        if dst:
-            conn.execute(
-                "UPDATE stock SET qty=qty+?, updated_at=datetime('now','localtime'), note=? WHERE id=?",
-                (qty, note, int(dst["id"])),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO stock (part_id, location, qty, condition, note) VALUES (?,?,?,?,?)",
-                (part_id, to_location, qty, "new", note),
-            )
+        apply_stock_delta(conn, part_id=part_id, location=from_location, qty_delta=-qty, note=note)
+        apply_stock_delta(conn, part_id=part_id, location=to_location, qty_delta=qty, note=note)
         write_ledger(
             conn,
             doc_type="MOVE",
@@ -928,7 +908,7 @@ def stock_move(conn, mpn: str, from_location: str, to_location: str, qty: int, n
 
 
 def stock_adjust(
-    conn,
+    conn: sqlite3.Connection,
     mpn: str,
     location: str,
     add_qty: int = 0,
@@ -973,14 +953,14 @@ def stock_adjust(
         raise
 
 
-def create_project(conn, code: str, name: str, owner: str = "", note: str = ""):
+def create_project(conn: sqlite3.Connection, code: str, name: str, owner: str = "", note: str = "") -> None:
     conn.execute(
         "INSERT INTO projects (code, name, owner, note) VALUES (?,?,?,?)",
         (code, name, owner or None, note or None),
     )
 
 
-def add_project(conn, code: str, name: str, owner: str = "", note: str = "") -> tuple[int, bool]:
+def add_project(conn: sqlite3.Connection, code: str, name: str, owner: str = "", note: str = "") -> tuple[int, bool]:
     row = conn.execute("SELECT id FROM projects WHERE code=?", (code,)).fetchone()
     if row:
         conn.execute(
@@ -999,7 +979,7 @@ def add_project(conn, code: str, name: str, owner: str = "", note: str = "") -> 
     return new_id, True
 
 
-def show_project_resources(conn, project_code: str):
+def show_project_resources(conn: sqlite3.Connection, project_code: str) -> None:
     project_id = get_project_id(conn, project_code)
     rows = list_resources(conn, project_id)
     if not rows:
@@ -1011,7 +991,7 @@ def show_project_resources(conn, project_code: str):
         print("\t".join(str(r[h] if r[h] is not None else "") for h in headers))
 
 
-def show_project_overview(conn, project_code: str = ""):
+def show_project_overview(conn: sqlite3.Connection, project_code: str = "") -> None:
     if clean_text(project_code):
         rows = conn.execute("SELECT * FROM v_project_overview WHERE project_code=?", (project_code,)).fetchall()
     else:
@@ -1025,7 +1005,7 @@ def show_project_overview(conn, project_code: str = ""):
         print("\t".join(str(r[h]) for h in headers))
 
 
-def check_project_resources(conn, project_code: str):
+def check_project_resources(conn: sqlite3.Connection, project_code: str) -> None:
     project_id = get_project_id(conn, project_code)
     checks = check_resources(conn, project_id)
     if not checks:
@@ -1037,7 +1017,7 @@ def check_project_resources(conn, project_code: str):
         print("\t".join(str(item[h]) for h in headers))
 
 
-def set_bom(conn, project_code: str, mpn: str, req_qty: int, priority: int = 2, note: str = ""):
+def set_bom(conn: sqlite3.Connection, project_code: str, mpn: str, req_qty: int, priority: int = 2, note: str = "") -> None:
     pid = get_project_id(conn, project_code)
     part_id = get_part_id_by_mpn(conn, mpn)
     # upsert bom
@@ -1054,12 +1034,10 @@ def set_bom(conn, project_code: str, mpn: str, req_qty: int, priority: int = 2, 
         )
 
 
-def reserve_loc(conn, project_code: str, mpn: str, location: str, qty: int, note: str = "") -> int:
+def reserve_loc(conn: sqlite3.Connection, project_code: str, mpn: str, location: str, qty: int, note: str = "") -> int:
     if qty <= 0:
         raise RuntimeError("预留数量必须为正整数")
-    # location 合法性（触发器也会检查，这里提前报错更友好）
-    if conn.execute("SELECT 1 FROM locations WHERE location=?", (location,)).fetchone() is None:
-        raise RuntimeError(f"库位不存在：{location}")
+    assert_location_exists(conn, location)
 
     pid = get_project_id(conn, project_code)
     part_id = get_part_id_by_mpn(conn, mpn)
@@ -1082,10 +1060,12 @@ def reserve_loc(conn, project_code: str, mpn: str, location: str, qty: int, note
     return alloc_id
 
 
-def release_alloc(conn, alloc_id: int, note_append: str = "释放"):
+def release_alloc(conn: sqlite3.Connection, alloc_id: int, note_append: str = "释放") -> None:
     row = conn.execute("SELECT project_id, part_id, location, alloc_qty, status FROM project_alloc WHERE id=?", (alloc_id,)).fetchone()
     if not row:
         raise RuntimeError(f"alloc_id 不存在：{alloc_id}")
+    if row["status"] != "reserved":
+        raise RuntimeError(f"只有 reserved 状态才能释放，当前={row['status']}")
     conn.execute(
         "UPDATE project_alloc SET status='released', updated_at=datetime('now','localtime'), note=COALESCE(note,'') || ? WHERE id=?",
         (f" | {note_append}", alloc_id),
@@ -1102,7 +1082,7 @@ def release_alloc(conn, alloc_id: int, note_append: str = "释放"):
     )
 
 
-def consume_alloc(conn, alloc_id: int, note_append: str = "已消耗"):
+def consume_alloc(conn: sqlite3.Connection, alloc_id: int, note_append: str = "已消耗") -> None:
     """
     消耗 = 将 alloc 标记为 consumed + 扣减 stock（同一 part + location）
     强约束已保证 alloc 不会超预留，但 stock 扣减还需要确保该库位 stock 行存在且足够。
@@ -1159,7 +1139,7 @@ def consume_alloc(conn, alloc_id: int, note_append: str = "已消耗"):
         raise
 
 
-def show_ledger(conn, project_code: str = "", mpn: str = "", since: str = ""):
+def show_ledger(conn: sqlite3.Connection, project_code: str = "", mpn: str = "", since: str = "") -> None:
     sql = """
     SELECT d.created_at, d.doc_type, pr.code AS project_code, p.mpn,
            d.from_location, d.to_location, l.qty, d.ref, d.operator, d.note
@@ -1190,7 +1170,7 @@ def show_ledger(conn, project_code: str = "", mpn: str = "", since: str = ""):
         print("\t".join(str(r[h]) if r[h] is not None else "" for h in headers))
 
 
-def export_schema_sql(conn) -> str:
+def export_schema_sql(conn: sqlite3.Connection) -> str:
     rows = conn.execute(
         """
         SELECT type, name, sql
@@ -1202,7 +1182,7 @@ def export_schema_sql(conn) -> str:
     return "\n\n".join(f"-- {r['type']}: {r['name']}\n{r['sql']};" for r in rows)
 
 
-def export_schema_md(conn) -> str:
+def export_schema_md(conn: sqlite3.Connection) -> str:
     lines = ["# Database Schema", ""]
     for t in ("table", "view", "index", "trigger"):
         rows = conn.execute(
@@ -1226,7 +1206,7 @@ def export_schema_md(conn) -> str:
     return "\n".join(lines)
 
 
-def schema_export(conn, fmt: str = "sql", out_path: Path | None = None):
+def schema_export(conn: sqlite3.Connection, fmt: str = "sql", out_path: Path | None = None) -> None:
     content = export_schema_sql(conn) if fmt == "sql" else export_schema_md(conn)
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1295,7 +1275,7 @@ def _iter_txn_rows_from_workbook(wb, mode: str):
     return rows
 
 
-def txn_import_xlsx(conn, xlsx_path: Path, partial: bool = False, error_out: Path | None = None, mode: str = "auto") -> tuple[int, int]:
+def txn_import_xlsx(conn: sqlite3.Connection, xlsx_path: Path, partial: bool = False, error_out: Path | None = None, mode: str = "auto") -> tuple[int, int]:
     _, load_workbook = _load_openpyxl()
     wb = load_workbook(xlsx_path)
     rows = _iter_txn_rows_from_workbook(wb, mode=mode)
@@ -1344,7 +1324,7 @@ def txn_import_xlsx(conn, xlsx_path: Path, partial: bool = False, error_out: Pat
     return ok, len(errors)
 
 
-def show_project_status(conn, project_code: str):
+def show_project_status(conn: sqlite3.Connection, project_code: str) -> None:
     rows = conn.execute(
         "SELECT * FROM v_project_material_status WHERE project_code=? ORDER BY category, mpn",
         (project_code,),
@@ -1360,7 +1340,7 @@ def show_project_status(conn, project_code: str):
         print("\t".join(str(r[h]) for h in headers))
 
 
-def show_alloc_detail(conn, project_code: str):
+def show_alloc_detail(conn: sqlite3.Connection, project_code: str) -> None:
     rows = conn.execute(
         "SELECT * FROM v_project_alloc_detail WHERE project_code=? ORDER BY updated_at DESC",
         (project_code,),
@@ -1373,7 +1353,7 @@ def show_alloc_detail(conn, project_code: str):
     for r in rows:
         print("\t".join(str(r[h]) for h in headers))
 
-def init_locations(conn, room: str, cabinets: list, positions_per_shelf: int = 10, overwrite_note: bool = False):
+def init_locations(conn: sqlite3.Connection, room: str, cabinets: list, positions_per_shelf: int = 10, overwrite_note: bool = False) -> int:
     """
     cabinets: list of dicts, e.g.
       [{"code":"G01","shelves":3,"note":"三层柜 30x80x35"},
@@ -1462,7 +1442,7 @@ def _load_lcsc_rows(path: Path) -> list[dict]:
 
 
 def export_project_forms(
-    conn,
+    conn: sqlite3.Connection,
     project_code: str,
     outbound_csv: Path,
     inbound_csv: Path,
@@ -1661,7 +1641,7 @@ def export_project_forms(
 
 
 def import_lcsc_file_to_parts_and_stock(
-    conn,
+    conn: sqlite3.Connection,
     lcsc_file: Path,
     inbound_location: str = "LCSC-INBOX",
     datasheets_dir: Path | None = None,
@@ -1713,8 +1693,8 @@ def import_lcsc_file_to_parts_and_stock(
                     out_pdf = datasheets_dir / f"{base}.pdf"
                     if download_pdf(session, pdf_url, out_pdf):
                         datasheet_local = str(out_pdf)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[warn] 抓取数据手册失败 mpn={mpn}: {type(e).__name__}: {e}")
 
         part_id = upsert_part(
             conn,
