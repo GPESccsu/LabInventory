@@ -65,7 +65,7 @@ poetry install
 ### FastAPI 后端
 
 ```bash
-poetry run uvicorn backend.app.api:app --host 0.0.0.0 --port 8000
+poetry run uvicorn backend.app.api:app --host 127.0.0.1 --port 8000
 ```
 
 启动后可访问交互式文档：`http://localhost:8000/docs`
