@@ -1744,6 +1744,130 @@ def import_lcsc_file_to_parts_and_stock(
 
 
 # ---------------------------
+# 查询显示函数
+# ---------------------------
+
+def show_parts(conn: sqlite3.Connection, query: str = "", limit: int = 200) -> None:
+    """搜索/列出物料。"""
+    if query:
+        like = f"%{query}%"
+        rows = conn.execute(
+            """
+            SELECT id, mpn, name, category, package, params, unit, url, datasheet, note, created_at
+            FROM parts
+            WHERE mpn LIKE ? OR name LIKE ? OR category LIKE ? OR package LIKE ?
+            ORDER BY mpn
+            LIMIT ?
+            """,
+            (like, like, like, like, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, mpn, name, category, package, params, unit, url, datasheet, note, created_at FROM parts ORDER BY mpn LIMIT ?",
+            (limit,),
+        ).fetchall()
+    if not rows:
+        print("没有匹配的物料")
+        return
+    headers = ["id", "mpn", "name", "category", "package", "params", "unit", "url", "datasheet", "note", "created_at"]
+    print("\t".join(headers))
+    for r in rows:
+        print("\t".join(str(r[h] if r[h] is not None else "") for h in headers))
+    print(f"\n共 {len(rows)} 条记录")
+
+
+def show_stock(conn: sqlite3.Connection, query: str = "", location: str = "", limit: int = 500) -> None:
+    """列出库存（可按物料/库位过滤）。"""
+    sql = """
+        SELECT s.id AS stock_id, s.part_id, p.mpn, p.name AS part_name,
+               s.location, s.qty, s.condition, s.updated_at
+        FROM stock s
+        JOIN parts p ON p.id = s.part_id
+        WHERE s.qty > 0
+    """
+    params: list[object] = []
+    if query:
+        like = f"%{query}%"
+        sql += " AND (p.mpn LIKE ? OR p.name LIKE ?)"
+        params.extend([like, like])
+    if location:
+        sql += " AND s.location LIKE ?"
+        params.append(f"%{location}%")
+    sql += " ORDER BY s.location, p.mpn LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    if not rows:
+        print("没有匹配的库存记录")
+        return
+    headers = ["stock_id", "part_id", "mpn", "part_name", "location", "qty", "condition", "updated_at"]
+    print("\t".join(headers))
+    for r in rows:
+        print("\t".join(str(r[h] if r[h] is not None else "") for h in headers))
+    total_qty = sum(r["qty"] for r in rows)
+    print(f"\n共 {len(rows)} 条记录，总数量 {total_qty}")
+
+
+def show_locations(conn: sqlite3.Connection) -> None:
+    """列出所有库位。"""
+    rows = conn.execute("SELECT location, note FROM locations ORDER BY location").fetchall()
+    if not rows:
+        print("没有库位记录")
+        return
+    headers = ["location", "note"]
+    print("\t".join(headers))
+    for r in rows:
+        print("\t".join(str(r[h] if r[h] is not None else "") for h in headers))
+    print(f"\n共 {len(rows)} 个库位")
+
+
+def show_project_list(conn: sqlite3.Connection, query: str = "") -> None:
+    """搜索/列出项目。"""
+    if query:
+        like = f"%{query}%"
+        rows = conn.execute(
+            """
+            SELECT id, code, name, owner, status, note, created_at
+            FROM projects
+            WHERE code LIKE ? OR name LIKE ? OR owner LIKE ?
+            ORDER BY code
+            """,
+            (like, like, like),
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT id, code, name, owner, status, note, created_at FROM projects ORDER BY code").fetchall()
+    if not rows:
+        print("没有匹配的项目")
+        return
+    headers = ["id", "code", "name", "owner", "status", "note", "created_at"]
+    print("\t".join(headers))
+    for r in rows:
+        print("\t".join(str(r[h] if r[h] is not None else "") for h in headers))
+    print(f"\n共 {len(rows)} 个项目")
+
+
+def show_stats(conn: sqlite3.Connection) -> None:
+    """显示系统统计信息。"""
+    parts = conn.execute("SELECT COUNT(*) AS c FROM parts").fetchone()["c"]
+    stock_rows = conn.execute("SELECT COUNT(*) AS c FROM stock WHERE qty > 0").fetchone()["c"]
+    total_qty = conn.execute("SELECT COALESCE(SUM(qty), 0) AS c FROM stock WHERE qty > 0").fetchone()["c"]
+    projects = conn.execute("SELECT COUNT(*) AS c FROM projects").fetchone()["c"]
+    locations = conn.execute("SELECT COUNT(*) AS c FROM locations").fetchone()["c"]
+    allocs = conn.execute("SELECT COUNT(*) AS c FROM project_alloc WHERE status='reserved'").fetchone()["c"]
+    txns = conn.execute("SELECT COUNT(*) AS c FROM inv_doc").fetchone()["c"]
+    print("╔══════════════════════════════════╗")
+    print("║     实验室库存管理系统 — 统计      ║")
+    print("╠══════════════════════════════════╣")
+    print(f"║  物料种类    {parts:>8}            ║")
+    print(f"║  库存记录    {stock_rows:>8}            ║")
+    print(f"║  库存总量    {total_qty:>8}            ║")
+    print(f"║  库位数量    {locations:>8}            ║")
+    print(f"║  项目数量    {projects:>8}            ║")
+    print(f"║  活跃预留    {allocs:>8}            ║")
+    print(f"║  交易单据    {txns:>8}            ║")
+    print("╚══════════════════════════════════╝")
+
+
+# ---------------------------
 # CLI
 # ---------------------------
 def main():
@@ -1914,6 +2038,27 @@ def main():
     p.add_argument("--apply-inbound", action="store_true", help="将入库单数量写入库存")
     p.add_argument("--inbound-loc", default="", help="执行 --apply-inbound 时的入库库位")
 
+    # parts search / list
+    p = sub.add_parser("parts", help="搜索/列出物料（按MPN/名称/分类/封装）")
+    p.add_argument("--query", default="", help="搜索关键词（MPN/名称/分类/封装）")
+    p.add_argument("--limit", type=int, default=200, help="最大返回条数（默认200）")
+
+    # stock list
+    p = sub.add_parser("stock-list", help="查看库存（可按物料/库位过滤）")
+    p.add_argument("--query", default="", help="搜索关键词（MPN/名称）")
+    p.add_argument("--loc", default="", help="按库位过滤")
+    p.add_argument("--limit", type=int, default=500, help="最大返回条数（默认500）")
+
+    # locations list
+    p = sub.add_parser("locations", help="列出所有库位")
+
+    # project list (under project subcommand)
+    p = project_sub.add_parser("list", help="搜索/列出项目")
+    p.add_argument("--query", default="", help="搜索关键词（code/名称/负责人）")
+
+    # stats
+    p = sub.add_parser("stats", help="系统统计信息（物料/库存/项目/库位等）")
+
     args = ap.parse_args()
     cwd = Path.cwd()
     db_path = resolve_input_path(args.db, cwd)
@@ -1988,6 +2133,9 @@ def main():
                 return
             if args.project_cmd == "overview":
                 show_project_overview(conn, args.code)
+                return
+            if args.project_cmd == "list":
+                show_project_list(conn, args.query)
                 return
             if args.project_cmd == "resource":
                 if args.resource_cmd == "add":
@@ -2135,6 +2283,22 @@ def main():
             print(f"入库单已生成：{args.inbound_csv}")
             if args.apply_inbound:
                 print(f"已按入库单写库：loc={args.inbound_loc}")
+            return
+
+        if args.cmd == "parts":
+            show_parts(conn, args.query, args.limit)
+            return
+
+        if args.cmd == "stock-list":
+            show_stock(conn, args.query, args.loc, args.limit)
+            return
+
+        if args.cmd == "locations":
+            show_locations(conn)
+            return
+
+        if args.cmd == "stats":
+            show_stats(conn)
             return
 
     except sqlite3.IntegrityError as e:
