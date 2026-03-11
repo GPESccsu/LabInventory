@@ -4,7 +4,7 @@ import os
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from backend.app.core import DatabaseLockedError, InventoryError, InventoryService, NotFoundError
 from backend.app.schemas import (
@@ -218,6 +218,36 @@ async def import_txns_xlsx(
 ):
     data = await file.read()
     return service.import_txn_xlsx(data, partial=partial, mode=mode)
+
+
+# --- LCSC ---
+
+@app.post("/api/lcsc/fetch", response_model=GenericResult)
+def lcsc_fetch(url: str = Form(...), datasheets_dir: str = Form("./datasheets")):
+    result = service.lcsc_fetch(url, datasheets_dir)
+    return {"ok": True, "detail": f"导入成功：MPN={result['mpn']} part_id={result['part_id']}"}
+
+
+@app.post("/api/lcsc/import-xlsx", response_model=ImportResponse)
+async def lcsc_import_file(
+    file: UploadFile = File(...),
+    inbound_location: str = Form("LCSC-INBOX"),
+):
+    data = await file.read()
+    result = service.lcsc_import_file(data, inbound_location=inbound_location)
+    return {"ok": result["parts"], "err": result["stock"]}
+
+
+# --- TXN Export Template ---
+
+@app.get("/api/txns/export-template")
+def txn_export_template():
+    data = service.txn_export_xlsx_template()
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=txn_template.xlsx"},
+    )
 
 
 def main() -> None:

@@ -441,3 +441,73 @@ class InventoryService:
         except Exception as exc:
             raise _normalize_error(exc) from exc
 
+    # --- LCSC ---
+
+    def lcsc_fetch(self, url: str, datasheets_dir: str = "./datasheets") -> dict[str, Any]:
+        """Fetch part info from an LCSC URL and upsert into parts table."""
+        try:
+            ds_dir = Path(datasheets_dir)
+            ds_dir.mkdir(parents=True, exist_ok=True)
+            item = inv.lcsc_fetch_and_parse(url, ds_dir)
+            with closing(self._conn()) as conn:
+                with conn:
+                    part_id = inv.upsert_part(
+                        conn,
+                        mpn=item.mpn,
+                        name=item.desc,
+                        category=item.category,
+                        package=item.package,
+                        params=item.params_text,
+                        url=item.page_url,
+                        datasheet=item.datasheet_local or item.page_url,
+                        note=item.note,
+                    )
+            return {
+                "part_id": part_id,
+                "mpn": item.mpn,
+                "desc": item.desc,
+                "category": item.category,
+                "package": item.package,
+                "lcsc_code": item.lcsc_code,
+                "params_text": item.params_text,
+                "page_url": item.page_url,
+                "datasheet_local": item.datasheet_local,
+            }
+        except InventoryError:
+            raise
+        except Exception as exc:
+            raise _normalize_error(exc) from exc
+
+    def lcsc_import_file(self, xlsx_bytes: bytes, inbound_location: str = "LCSC-INBOX") -> dict[str, Any]:
+        """Import LCSC order XLSX into parts+stock."""
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        tmp.write(xlsx_bytes)
+        tmp.close()
+        try:
+            with closing(self._conn()) as conn:
+                with conn:
+                    ds_dir = Path(conn.execute("PRAGMA database_list").fetchone()[2]).parent / "datasheets"
+                    part_written, stock_written = inv.import_lcsc_file_to_parts_and_stock(
+                        conn,
+                        lcsc_file=Path(tmp.name),
+                        inbound_location=inbound_location,
+                        datasheets_dir=ds_dir,
+                    )
+            return {"parts": part_written, "stock": stock_written}
+        except InventoryError:
+            raise
+        except Exception as exc:
+            raise _normalize_error(exc) from exc
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+
+    def txn_export_xlsx_template(self) -> bytes:
+        """Generate a transaction XLSX template and return bytes."""
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        tmp.close()
+        try:
+            inv.txn_export_xlsx_template(Path(tmp.name))
+            return Path(tmp.name).read_bytes()
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+
