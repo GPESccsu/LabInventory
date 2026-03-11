@@ -141,6 +141,16 @@ conn.execute("PRAGMA foreign_keys=ON;")
 
 ## CLI Reference (`python inv.py --db <path> <subcommand>`)
 
+### Query & Search (查询)
+
+```bash
+parts      [--query <KEYWORD>] [--limit 200]           # 搜索/列出物料（按MPN/名称/分类/封装）
+stock-list [--query <KEYWORD>] [--loc <LOC>] [--limit 500]  # 查看库存（可按物料/库位过滤）
+locations                                               # 列出所有库位
+project list [--query <KEYWORD>]                        # 搜索/列出项目（按code/名称/负责人）
+stats                                                   # 系统统计信息（物料/库存/项目/库位等）
+```
+
 ### Stock Management
 
 ```bash
@@ -164,6 +174,7 @@ proj-alloc  --proj <CODE>
 # Newer hierarchical form (equivalent)
 project add --code <CODE> --name <NAME> [--owner ""] [--note ""]
 project overview [--code <CODE>]
+project list [--query <KEYWORD>]
 ```
 
 ### Project Resources
@@ -186,6 +197,7 @@ schema-export [--format sql|md] [--out <PATH>]
 txn-export-xlsx --out <PATH>
 txn-import-xlsx --xlsx <PATH> [--mode auto|transactions|stock-io] [--partial] [--error-out <PATH>]
 proj-forms --proj <CODE> [--outbound-csv <PATH>] [--inbound-csv <PATH>] [--lcsc-file <PATH>] [--apply-inbound] [--inbound-loc <LOC>]
+stats
 ```
 
 ---
@@ -196,6 +208,15 @@ Base URL: `http://0.0.0.0:8000`
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/api/health` | System health check |
+| GET | `/api/parts` | Search parts (optional `?query=`) |
+| GET | `/api/stock` | List stock (optional `?query=`, `?location=`) |
+| GET | `/api/locations` | List all storage locations |
+| GET | `/api/ledger` | Query transaction ledger (`?project=`, `?mpn=`, `?since=`) |
+| POST | `/api/stock/in` | Stock in (add qty) |
+| POST | `/api/stock/out` | Stock out (deduct qty) |
+| POST | `/api/stock/move` | Move stock between locations |
+| POST | `/api/stock/adjust` | Adjust stock quantity |
 | POST | `/api/projects` | Create or update a project |
 | GET | `/api/projects` | List projects (optional `?query=`) |
 | GET | `/api/projects/{code}` | Get project detail |
