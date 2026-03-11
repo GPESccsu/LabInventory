@@ -213,6 +213,7 @@ Base URL: `http://0.0.0.0:8000`
 | GET | `/api/stock` | List stock (optional `?query=`, `?location=`) |
 | GET | `/api/locations` | List all storage locations |
 | GET | `/api/ledger` | Query transaction ledger (`?project=`, `?mpn=`, `?since=`) |
+| POST | `/api/lcsc/import` | Import part from LCSC URL |
 | POST | `/api/stock/in` | Stock in (add qty) |
 | POST | `/api/stock/out` | Stock out (deduct qty) |
 | POST | `/api/stock/move` | Move stock between locations |
@@ -238,6 +239,22 @@ Base URL: `http://0.0.0.0:8000`
 - `404` — `NotFoundError` (project/part not found)
 - `409` — `DatabaseLockedError` (SQLite busy)
 - `400` — all other `InventoryError` variants
+
+---
+
+## Streamlit Frontend Tabs (`frontend/streamlit_app.py`)
+
+The Streamlit web UI provides 7 tabs covering all system functionality:
+
+| Tab | Features |
+|-----|----------|
+| 系统概览 | System health metrics (parts/stock/projects count) |
+| 物料管理 | Search/list parts; LCSC import (立创商城导入) |
+| 库存管理 | Stock query; stock-in/out/move/adjust; locations list |
+| 项目管理 | Project CRUD; BOM status; reserve/release/consume |
+| 项目资源 | Resource add/list/delete/check per project |
+| 交易流水 | Ledger query (by project, MPN, date) |
+| 导入导出 | XLSX transaction import; XLSX resource import |
 
 ---
 

@@ -14,6 +14,8 @@ from backend.app.schemas import (
     GenericResult,
     HealthResponse,
     ImportResponse,
+    LcscImportRequest,
+    LcscImportResponse,
     LedgerResponse,
     LocationListResponse,
     PartListResponse,
@@ -82,6 +84,11 @@ def search_parts(query: str = Query(default="")):
 @app.get("/api/stock", response_model=StockListResponse)
 def list_stock(query: str = Query(default=""), location: str = Query(default="")):
     return {"items": service.list_stock(query, location)}
+
+
+@app.post("/api/lcsc/import", response_model=LcscImportResponse)
+def lcsc_import(req: LcscImportRequest):
+    return service.lcsc_import(req.url)
 
 
 @app.post("/api/stock/in", response_model=GenericResult)

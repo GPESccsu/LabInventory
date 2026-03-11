@@ -264,3 +264,18 @@ class LedgerRow(BaseModel):
 
 class LedgerResponse(BaseModel):
     items: list[LedgerRow]
+
+
+# --- LCSC Import ---
+
+class LcscImportRequest(BaseModel):
+    url: str
+
+
+class LcscImportResponse(BaseModel):
+    part_id: int
+    mpn: str
+    name: str
+    category: str
+    package: str | None = None
+    datasheet: str | None = None

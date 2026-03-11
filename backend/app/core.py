@@ -422,6 +422,37 @@ class InventoryService:
         except Exception as exc:
             raise _normalize_error(exc) from exc
 
+    def lcsc_import(self, url: str) -> dict[str, Any]:
+        """从立创商城链接导入物料。"""
+        try:
+            datasheets_dir = self.db_path.parent / "datasheets"
+            item = inv.lcsc_fetch_and_parse(url, datasheets_dir)
+            with closing(self._conn()) as conn:
+                with conn:
+                    part_id = inv.upsert_part(
+                        conn,
+                        mpn=item.mpn,
+                        name=item.desc,
+                        category=item.category,
+                        package=item.package,
+                        params=item.params_text,
+                        url=item.page_url,
+                        datasheet=item.datasheet_local or item.page_url,
+                        note=item.note,
+                    )
+            return {
+                "part_id": part_id,
+                "mpn": item.mpn,
+                "name": item.desc,
+                "category": item.category,
+                "package": item.package,
+                "datasheet": item.datasheet_local or item.page_url,
+            }
+        except InventoryError:
+            raise
+        except Exception as exc:
+            raise _normalize_error(exc) from exc
+
     def health(self) -> dict[str, Any]:
         try:
             with closing(self._conn()) as conn:
