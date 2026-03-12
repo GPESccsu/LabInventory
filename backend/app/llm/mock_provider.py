@@ -15,9 +15,10 @@ from backend.app.llm.config import LLMConfig
 # 意图关键词映射（优先级从上到下）
 # 注意：顺序决定优先级。更具体的意图应排在前面。
 _INTENT_KEYWORDS: list[tuple[str, list[str]]] = [
-    ("stock_in",        ["入库", "进货", "到货", "收货", "stock in", "stock-in"]),
-    ("stock_move",      ["移库", "转移", "移动", "搬", "move"]),
-    ("stock_adjust",    ["调整", "盘点", "adjust"]),
+    ("stock_move",      ["移库", "转移", "移动", "移到", "搬到", "挪到", "搬", "move"]),
+    ("stock_adjust",    ["调整", "盘点", "加上", "减去", "扣除", "adjust"]),
+    ("stock_in",        ["入库", "进货", "到货", "收货", "放到", "放入", "存到", "存入",
+                         "stock in", "stock-in"]),
     ("reserve",         ["预留", "预定", "reserve"]),
     ("release",         ["释放", "release"]),
     ("consume",         ["消耗", "consume"]),
@@ -25,7 +26,8 @@ _INTENT_KEYWORDS: list[tuple[str, list[str]]] = [
                          "项目概况", "项目详情", "project status"]),
     ("query_ledger",    ["流水", "台账", "记录", "历史", "ledger", "日志",
                          "出库记录", "入库记录", "这个月", "本月", "最近", "上个月"]),
-    ("stock_out",       ["出库", "领料", "领取", "发料", "stock out", "stock-out"]),
+    ("stock_out",       ["出库", "领料", "领取", "发料", "领", "取走",
+                         "stock out", "stock-out"]),
     ("query_stock",     ["库存", "还有多少", "剩余", "stock", "余量", "数量",
                          "在哪", "哪些位置", "有货"]),
     ("query_parts",     ["元器件", "零件", "part", "物料信息", "参数", "电阻",
@@ -36,8 +38,14 @@ _INTENT_KEYWORDS: list[tuple[str, list[str]]] = [
 # 字段抽取正则
 _MPN_PATTERN = re.compile(
     r"(?:mpn|型号|料号)[：:\s]*([A-Za-z0-9\-_/.]+)"
-    r"|([A-Z][A-Za-z0-9]{2,}[\-][A-Za-z0-9\-/.]+)"   # 带连字符 MPN
-    r"|([A-Z]{2,}[0-9][A-Za-z0-9]{3,})"               # 连续 MPN 如 STM32F103C8T6
+    r"|([A-Z]{2,}[A-Za-z0-9]*[\-][A-Za-z0-9\-/.]{3,})"  # 带连字符 MPN（排除 G01-01 格式）
+    r"|([A-Z]{2,}[0-9][A-Za-z0-9]{3,})"                   # 连续 MPN 如 STM32F103C8T6
+)
+# 从文本中提取可能的物料描述词（如 "10k 电阻"、"电容"、"100uF"）
+_PART_DESC_PATTERN = re.compile(
+    r"(\d+[kKmMuUpPnN]?\s*(?:电阻|电容|电感|二极管|三极管|芯片|LED))"
+    r"|(\d+[kKmMuUpPnN]+)"                                   # 纯值如 10k, 100uF
+    r"|((?:电阻|电容|电感|二极管|三极管|芯片|LED|MOS管)\s*\d*)"  # 类名如 电容、电阻 100
 )
 _QTY_PATTERN = re.compile(
     r"(?:数量|qty|quantity|个数)[：:\s]*(\d+)"
@@ -46,7 +54,7 @@ _QTY_PATTERN = re.compile(
 _LOC_PATTERN = re.compile(
     r"(?:位置|库位|location|loc)[：:\s]*([A-Za-z0-9\-_]+)"
     r"|(C409[\-][A-Za-z0-9\-]+)"
-    r"|([GG][0-9]{2}[\-][0-9]{2}[\-][0-9]{2})"
+    r"|([GG][0-9]{2}[\-][0-9]{2}(?:[\-][0-9]{2})?)"  # G01-01 或 G01-01-01
 )
 _PROJECT_PATTERN = re.compile(
     r"(?:项目|project|proj)[：:\s]*([A-Za-z0-9\-_]+)"
@@ -130,6 +138,11 @@ class MockProvider(BaseLLMProvider):
             m = _MPN_PATTERN.search(text)
             if m:
                 result["mpn"] = m.group(1) or m.group(2) or m.group(3)
+            else:
+                # Fallback: 尝试匹配物料描述（如 "10k 电阻"、"电容"、"100uF"）
+                m = _PART_DESC_PATTERN.search(text)
+                if m:
+                    result["mpn"] = (m.group(1) or m.group(2) or m.group(3)).strip()
 
         if "qty" in field_schema:
             m = _QTY_PATTERN.search(text)
@@ -141,17 +154,27 @@ class MockProvider(BaseLLMProvider):
             m = _LOC_PATTERN.search(text)
             if m:
                 result["location"] = m.group(1) or m.group(2) or m.group(3)
+            else:
+                # "从 X 领" / "在 X" / "放到 X"
+                m = re.search(r"(?:从|在|到)\s*([A-Za-z0-9\-_]{3,})", text)
+                if m:
+                    result["location"] = m.group(1)
 
         if "from_location" in field_schema:
-            # 尝试匹配 "从 X 到 Y" 模式
+            # 尝试匹配 "从 X 到/移到 Y" 模式
             m = re.search(r"从\s*([A-Za-z0-9\-_]+)\s*(?:到|移到|转到)\s*([A-Za-z0-9\-_]+)", text)
             if m:
                 result["from_location"] = m.group(1)
                 if "to_location" in field_schema:
                     result["to_location"] = m.group(2)
+            else:
+                # "从 X" 或 "把 X 的...移到 Y"
+                m = re.search(r"(?:从|把)\s*([A-Za-z0-9\-_]+)\s*(?:的|里)", text)
+                if m:
+                    result["from_location"] = m.group(1)
 
         if "to_location" in field_schema and "to_location" not in result:
-            m = re.search(r"(?:到|目标|to)[：:\s]*([A-Za-z0-9\-_]+)", text)
+            m = re.search(r"(?:移到|搬到|挪到|转到|到)\s*([A-Za-z0-9\-_]+)", text)
             if m:
                 result["to_location"] = m.group(1)
 
@@ -159,6 +182,17 @@ class MockProvider(BaseLLMProvider):
             m = _PROJECT_PATTERN.search(text)
             if m:
                 result["project_code"] = m.group(1)
+            else:
+                # "给 TEST-001 项目" / "给 TEST-001"
+                m = re.search(r"给\s*([A-Za-z0-9\-_]+?)(?:\s*项目|\s|$)", text)
+                if m:
+                    result["project_code"] = m.group(1)
+
+        if "note" in field_schema and "note" not in result:
+            # 提取原因/备注：「因为盘点」「原因：XXX」「备注：XXX」
+            m = re.search(r"(?:因为|原因|备注|理由)[：:\s]*([^，,。.]+)", text)
+            if m:
+                result["note"] = m.group(1).strip()
 
         if "since" in field_schema:
             since = _extract_since(text)

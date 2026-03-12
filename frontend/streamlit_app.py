@@ -563,7 +563,123 @@ def render_ai_tab() -> None:
             st.markdown(f"**详细数据（共 {len(data)} 条）：**")
             st.dataframe(data, use_container_width=True)
 
+    # --- 库存操作草稿 ---
+    st.divider()
+    st.subheader("自然语言下单")
+    st.caption(
+        "用自然语言描述库存操作，系统生成草稿供确认后执行。"
+        "支持：入库、出库、移库、调整。"
+    )
+
+    draft_examples = [
+        "把 50 个 10k 电阻放到 G01-01",
+        "从 G01-01 领 5 个 STM32F103 给 TEST-001",
+        "把 G01-01 的 20 个电容移到 G02-01",
+        "盘点，STM32F103 在 G01-01 减 3 个",
+    ]
+    st.markdown("**快捷示例：**")
+    dcols = st.columns(2)
+    for i, ex in enumerate(draft_examples):
+        if dcols[i % 2].button(ex, key=f"draft_ex_{i}"):
+            st.session_state["draft_input"] = ex
+
+    draft_text = st.text_input(
+        "描述您的操作",
+        value=st.session_state.get("draft_input", ""),
+        key="draft_query_input",
+        placeholder="例如：把 50 个 STM32F103 放到 G01-01",
+    )
+
+    if st.button("生成草稿", key="draft_submit"):
+        if not draft_text:
+            st.warning("请输入操作描述")
+        else:
+            if "draft_input" in st.session_state:
+                del st.session_state["draft_input"]
+            with st.spinner("正在解析..."):
+                try:
+                    resp = api_post("/api/llm/draft-stock-op", json={"text": draft_text})
+                except Exception as exc:
+                    st.error(f"请求失败：{exc}")
+                    resp = None
+
+            if resp and resp.ok:
+                st.session_state["current_draft"] = resp.json()
+            elif resp:
+                st.error(f"API 错误：{resp.text}")
+
+    # 显示并编辑草稿
+    draft = st.session_state.get("current_draft")
+    if draft and draft.get("op_name"):
+        st.markdown("---")
+        op_name = draft["op_name"]
+        is_complete = draft["is_complete"]
+        desc = draft["description"]
+        confidence = draft.get("confidence", "?")
+
+        if is_complete:
+            st.success(f"**{op_name}草稿** — {desc}　置信度: `{confidence}`")
+        else:
+            st.warning(f"**{op_name}草稿** — {desc}　置信度: `{confidence}`")
+
+        # 可编辑字段表单
+        with st.form("draft_edit_form"):
+            st.markdown("#### 确认/修改字段")
+            field_defs = draft.get("field_defs", [])
+            fields = dict(draft.get("fields", {}))
+            edited_fields: dict = {}
+
+            for fd in field_defs:
+                fname = fd["name"]
+                flabel = fd["label"]
+                ftype = fd["type"]
+                freq = fd["required"]
+                val = fields.get(fname, "")
+
+                label_text = f"{flabel}{' *' if freq else ''}"
+                if ftype == "int":
+                    edited_fields[fname] = st.number_input(
+                        label_text, value=int(val) if val else 0, key=f"draft_f_{fname}"
+                    )
+                else:
+                    edited_fields[fname] = st.text_input(
+                        label_text, value=str(val) if val else "", key=f"draft_f_{fname}"
+                    )
+
+            col_confirm, col_cancel = st.columns(2)
+            confirmed = col_confirm.form_submit_button("确认执行", type="primary")
+            cancelled = col_cancel.form_submit_button("取消")
+
+            if confirmed:
+                with st.spinner("执行中..."):
+                    try:
+                        exec_resp = api_post("/api/llm/execute-draft", json={
+                            "op": draft["op"],
+                            "fields": edited_fields,
+                        })
+                    except Exception as exc:
+                        st.error(f"执行失败：{exc}")
+                        exec_resp = None
+
+                if exec_resp and exec_resp.ok:
+                    result = exec_resp.json()
+                    if result.get("ok"):
+                        st.success(result.get("detail", "操作成功"))
+                        del st.session_state["current_draft"]
+                    else:
+                        st.error(result.get("detail", "操作失败"))
+                elif exec_resp:
+                    st.error(f"API 错误：{exec_resp.text}")
+
+            if cancelled:
+                del st.session_state["current_draft"]
+                st.info("草稿已取消")
+
+    elif draft and not draft.get("op_name"):
+        st.warning(draft.get("description", "无法识别为库存操作"))
+
     # 显示当前 LLM 配置
+    st.divider()
     with st.expander("当前 LLM 配置"):
         try:
             cfg = api_get("/api/llm/config").json()

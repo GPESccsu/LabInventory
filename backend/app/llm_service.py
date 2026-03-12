@@ -10,7 +10,8 @@ from typing import Any
 
 from backend.app.llm import get_provider, parse_intent, reset_provider, summarize_result
 from backend.app.llm.config import LLMConfig
-from backend.app.llm.intent import ParsedIntent
+from backend.app.llm.draft_builder import WRITE_INTENTS, build_draft
+from backend.app.llm.intent import Intent, ParsedIntent
 from backend.app.llm.query_executor import execute_query
 
 
@@ -94,6 +95,106 @@ class LLMService:
             "data": result["data"],
             "confidence": parsed.confidence,
         }
+
+    def draft_stock_op(self, text: str) -> dict[str, Any]:
+        """自然语言 → 库存操作草稿（不执行）。
+
+        只生成草稿供用户确认，不写入数据库。
+
+        Args:
+            text: 用户自然语言输入。
+
+        Returns:
+            草稿字典，包含 op, fields, missing_fields, is_complete 等。
+        """
+        parsed = self.parse(text)
+
+        # 如果不是写操作意图，返回提示
+        if parsed.intent not in WRITE_INTENTS:
+            return {
+                "op": parsed.intent,
+                "op_name": "",
+                "api_path": "",
+                "fields": parsed.params,
+                "missing_fields": [],
+                "field_defs": [],
+                "is_complete": False,
+                "description": (
+                    f"无法识别为库存操作。识别到的意图：{parsed.intent}。\n"
+                    "支持的操作：入库、出库、移库、调整。\n"
+                    "示例：「把 50 个 STM32F103 入库到 G01-01」"
+                ),
+                "confidence": parsed.confidence,
+                "raw_text": text,
+            }
+
+        provider = get_provider()
+        return build_draft(parsed, provider=provider)
+
+    def execute_draft(self, op: str, fields: dict[str, Any]) -> dict[str, Any]:
+        """执行已确认的操作草稿。
+
+        通过现有 InventoryService 执行，不绕过任何业务规则和 trigger。
+
+        Args:
+            op: 操作类型 (stock_in / stock_out / stock_move / stock_adjust)
+            fields: 用户确认后的完整字段。
+
+        Returns:
+            {"ok": bool, "detail": str}
+        """
+        svc = self._get_service()
+        try:
+            if op == Intent.STOCK_IN:
+                svc.stock_in(
+                    mpn=fields["mpn"],
+                    location=fields["location"],
+                    qty=int(fields["qty"]),
+                    condition=fields.get("condition", "new"),
+                    note=fields.get("note", ""),
+                )
+                return {"ok": True, "detail": f"入库成功：{fields['mpn']} × {fields['qty']} → {fields['location']}"}
+
+            elif op == Intent.STOCK_OUT:
+                svc.stock_out(
+                    mpn=fields["mpn"],
+                    location=fields["location"],
+                    qty=int(fields["qty"]),
+                    project_code=fields.get("project_code", ""),
+                    ref=fields.get("ref", ""),
+                    note=fields.get("note", ""),
+                    operator=fields.get("operator", ""),
+                )
+                return {"ok": True, "detail": f"出库成功：{fields['mpn']} × {fields['qty']} ← {fields['location']}"}
+
+            elif op == Intent.STOCK_MOVE:
+                svc.stock_move(
+                    mpn=fields["mpn"],
+                    from_location=fields["from_location"],
+                    to_location=fields["to_location"],
+                    qty=int(fields["qty"]),
+                    note=fields.get("note", ""),
+                    operator=fields.get("operator", ""),
+                )
+                return {"ok": True, "detail": f"移库成功：{fields['mpn']} × {fields['qty']}"}
+
+            elif op == Intent.STOCK_ADJUST:
+                svc.stock_adjust(
+                    mpn=fields["mpn"],
+                    location=fields["location"],
+                    add_qty=int(fields.get("add_qty", 0)),
+                    sub_qty=int(fields.get("sub_qty", 0)),
+                    note=fields.get("note", ""),
+                    ref=fields.get("ref", ""),
+                    operator=fields.get("operator", ""),
+                )
+                return {"ok": True, "detail": f"调整成功：{fields['mpn']} @ {fields['location']}"}
+
+            else:
+                return {"ok": False, "detail": f"不支持的操作类型: {op}"}
+
+        except Exception as exc:
+            return {"ok": False, "detail": f"执行失败：{exc}"}
 
     def summarize(self, intent: str, data: Any, instruction: str = "") -> str:
         """结构化数据 → 中文摘要。"""

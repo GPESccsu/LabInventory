@@ -25,6 +25,9 @@ from backend.app.schemas import (
     LLMPingResponse,
     NLQueryRequest,
     NLQueryResponse,
+    StockOpDraftRequest,
+    StockOpDraftResponse,
+    ExecuteDraftRequest,
     LocationListResponse,
     PartListResponse,
     ProjectAllocResponse,
@@ -322,6 +325,22 @@ def llm_query(req: NLQueryRequest):
     from backend.app.llm_service import llm_service
 
     return llm_service.query(req.text)
+
+
+@app.post("/api/llm/draft-stock-op", response_model=StockOpDraftResponse)
+def llm_draft_stock_op(req: StockOpDraftRequest):
+    """自然语言 → 库存操作草稿（不执行，需人工确认）。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.draft_stock_op(req.text)
+
+
+@app.post("/api/llm/execute-draft", response_model=GenericResult)
+def llm_execute_draft(req: ExecuteDraftRequest):
+    """确认并执行草稿。通过现有业务逻辑执行，不绕过任何规则。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.execute_draft(req.op, req.fields)
 
 
 def main() -> None:
