@@ -11,6 +11,7 @@ from __future__ import annotations
 from backend.app.llm.base import BaseLLMProvider
 from backend.app.llm.config import LLMConfig
 from backend.app.llm.intent import Intent, ParsedIntent, parse_intent
+from backend.app.llm.resource_qa import ResourceContext, ask_resource_qa, build_resource_context
 from backend.app.llm.summarizer import summarize_result
 
 __all__ = [
@@ -18,6 +19,9 @@ __all__ = [
     "LLMConfig",
     "Intent",
     "ParsedIntent",
+    "ResourceContext",
+    "ask_resource_qa",
+    "build_resource_context",
     "get_provider",
     "parse_intent",
     "summarize_result",

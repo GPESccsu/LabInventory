@@ -331,6 +331,41 @@ def render_resources_tab() -> None:
         else:
             st.error(r.text)
 
+    # --- Resource Q&A ---
+    st.divider()
+    st.markdown("### 项目资源问答")
+    st.caption("基于当前项目的资源信息进行问答。回答仅依据已关联的资源，不会编造内容。")
+
+    qa_question = st.text_input(
+        "请输入您的问题",
+        "",
+        key="res_qa_question",
+        placeholder="例如：这个项目有哪些原理图文件？",
+    )
+
+    if st.button("提问", key="res_qa_submit", type="primary"):
+        if not qa_question:
+            st.warning("请输入问题")
+        else:
+            with st.spinner("正在查询项目资源..."):
+                try:
+                    resp = api_post(f"/api/projects/{code}/resources/qa", json={"question": qa_question})
+                except Exception as exc:
+                    st.error(f"请求失败：{exc}")
+                    resp = None
+
+            if resp and resp.ok:
+                result = resp.json()
+                answer = result.get("answer", "")
+                sources = result.get("sources", [])
+                total = result.get("total_resources", 0)
+
+                st.markdown(f"**回答：**\n\n{answer}")
+                if sources:
+                    st.caption(f"参考资源（共 {total} 条中匹配 {len(sources)} 条）：{'、'.join(sources)}")
+            elif resp:
+                st.error(f"API 错误：{resp.text}")
+
 
 # ---------------------------------------------------------------------------
 # Tab: LCSC Import
