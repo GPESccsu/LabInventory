@@ -6,10 +6,54 @@
 """
 from __future__ import annotations
 
+import json
+import logging
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 from backend.app.llm.config import LLMConfig
+
+logger = logging.getLogger(__name__)
+
+
+def _extract_json(text: str) -> dict[str, Any]:
+    """从 LLM 回复文本中提取 JSON 对象。
+
+    支持以下格式：
+    - 纯 JSON: {"key": "value"}
+    - Markdown code block: ```json\n{...}\n```
+    - 带前后缀文字: 一些文字 {...} 一些文字
+
+    Raises:
+        ValueError: 无法从文本中提取有效 JSON。
+    """
+    text = text.strip()
+
+    # 1. 尝试直接解析
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. 尝试从 markdown code block 提取
+    m = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+
+    # 3. 尝试找到第一个 { 到最后一个 } 之间的内容
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"无法从回复中提取 JSON: {text[:200]}")
 
 
 class BaseLLMProvider(ABC):
@@ -30,6 +74,49 @@ class BaseLLMProvider(ABC):
             模型生成的文本。
         """
         ...
+
+    def chat_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema_hint: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """统一的结构化 JSON 输出接口。
+
+        将 system_prompt + user_prompt 发送给模型，期望返回 JSON 对象。
+        自动处理 JSON 提取和解析，子类可覆盖以利用原生 JSON mode。
+
+        Args:
+            system_prompt: 系统提示词（角色设定 + 输出格式要求）。
+            user_prompt: 用户输入。
+            schema_hint: 可选的期望输出 JSON schema 描述。
+                帮助模型理解期望的输出结构，如：
+                {"intent": "str — 意图名称", "confidence": "float — 置信度"}
+
+        Returns:
+            解析后的 dict。
+
+        Raises:
+            ValueError: 模型返回的内容无法解析为 JSON。
+            RuntimeError: 模型调用失败。
+        """
+        # 构造 system 提示：追加 JSON 格式要求
+        full_system = system_prompt.rstrip()
+        if schema_hint:
+            schema_desc = json.dumps(schema_hint, ensure_ascii=False, indent=2)
+            full_system += f"\n\n期望输出 JSON 格式：\n{schema_desc}"
+        full_system += "\n\n请只返回 JSON 对象，不要包含其他内容。"
+
+        messages = [
+            {"role": "system", "content": full_system},
+            {"role": "user", "content": user_prompt},
+        ]
+        raw = self.chat(messages)
+        try:
+            return _extract_json(raw)
+        except ValueError:
+            logger.warning("chat_json 解析失败，原始回复: %s", raw[:300])
+            raise
 
     @abstractmethod
     def extract_fields(self, text: str, field_schema: dict[str, str]) -> dict[str, Any]:

@@ -302,3 +302,75 @@ class LLMConfigResponse(BaseModel):
     api_type: str
     timeout: int
     max_tokens: int
+
+
+class LLMPingResponse(BaseModel):
+    ok: bool
+    provider: str
+    model: str
+    detail: str = ""
+
+
+class LLMParseRequest(BaseModel):
+    text: str
+
+
+class LLMParseResponse(BaseModel):
+    intent: str
+    params: dict = {}
+    missing_fields: list[str] = []
+    is_complete: bool = False
+    is_query: bool = False
+    confidence: str = "mock"
+    summary: str = ""
+
+
+class NLQueryRequest(BaseModel):
+    text: str
+
+
+class NLQueryResponse(BaseModel):
+    intent: str
+    params: dict = {}
+    ok: bool = True
+    message: str = ""
+    data: list | dict = []
+    confidence: str = "mock"
+
+
+# --- Stock Operation Draft ---
+
+class StockOpDraftRequest(BaseModel):
+    text: str
+
+
+class FieldDef(BaseModel):
+    name: str
+    label: str
+    type: str
+    required: bool
+
+
+class MissingField(BaseModel):
+    name: str
+    label: str
+    type: str
+
+
+class StockOpDraftResponse(BaseModel):
+    op: str
+    op_name: str = ""
+    api_path: str = ""
+    fields: dict = {}
+    missing_fields: list[MissingField] = []
+    field_defs: list[FieldDef] = []
+    is_complete: bool = False
+    description: str = ""
+    confidence: str = "mock"
+    raw_text: str = ""
+
+
+class ExecuteDraftRequest(BaseModel):
+    """确认执行草稿。fields 是用户确认/修改后的最终字段值。"""
+    op: str = Field(pattern=r"^(stock_in|stock_out|stock_move|stock_adjust)$")
+    fields: dict

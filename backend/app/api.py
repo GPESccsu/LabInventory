@@ -20,6 +20,14 @@ from backend.app.schemas import (
     LLMConfigResponse,
     LLMIntentRequest,
     LLMIntentResponse,
+    LLMParseRequest,
+    LLMParseResponse,
+    LLMPingResponse,
+    NLQueryRequest,
+    NLQueryResponse,
+    StockOpDraftRequest,
+    StockOpDraftResponse,
+    ExecuteDraftRequest,
     LocationListResponse,
     PartListResponse,
     ProjectAllocResponse,
@@ -259,29 +267,80 @@ def txn_export_template():
 
 @app.post("/api/llm/chat", response_model=LLMChatResponse)
 def llm_chat(req: LLMChatRequest):
-    from backend.app.llm import get_provider
+    from backend.app.llm_service import llm_service
 
-    provider = get_provider()
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
-    reply = provider.chat(messages)
+    reply = llm_service.chat(messages)
     return {"reply": reply}
 
 
 @app.post("/api/llm/intent", response_model=LLMIntentResponse)
 def llm_intent(req: LLMIntentRequest):
-    from backend.app.llm import get_provider, parse_intent
+    from backend.app.llm_service import llm_service
 
-    provider = get_provider()
-    result = parse_intent(provider, req.text)
+    result = llm_service.parse(req.text)
     return result.to_dict()
 
 
 @app.get("/api/llm/config", response_model=LLMConfigResponse)
 def llm_config():
-    from backend.app.llm.config import LLMConfig
+    from backend.app.llm_service import llm_service
 
-    cfg = LLMConfig.from_env()
-    return cfg.safe_dict()
+    return llm_service.get_config()
+
+
+@app.post("/api/llm/ping", response_model=LLMPingResponse)
+def llm_ping():
+    """检测当前 LLM provider 连通性。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.ping()
+
+
+@app.post("/api/llm/parse", response_model=LLMParseResponse)
+def llm_parse(req: LLMParseRequest):
+    """自然语言解析：意图分类 + 字段抽取 + 摘要（一次调用完成）。"""
+    from backend.app.llm_service import llm_service
+
+    result = llm_service.parse(req.text)
+    summary = ""
+    if result.is_complete and result.is_query:
+        summary = f"[{result.intent}] 参数完整，可直接执行查询。"
+    elif not result.is_complete:
+        summary = f"[{result.intent}] 缺少字段: {', '.join(result.missing_fields)}"
+    else:
+        summary = f"[{result.intent}] 参数完整，确认后可执行。"
+    return {
+        **result.to_dict(),
+        "summary": summary,
+    }
+
+
+@app.post("/api/llm/query", response_model=NLQueryResponse)
+def llm_query(req: NLQueryRequest):
+    """自然语言查询：解析意图 → 执行真实数据库查询 → 返回中文结果。
+
+    LLM 不编造数据，所有结果来自 SQLite 真实查询。
+    """
+    from backend.app.llm_service import llm_service
+
+    return llm_service.query(req.text)
+
+
+@app.post("/api/llm/draft-stock-op", response_model=StockOpDraftResponse)
+def llm_draft_stock_op(req: StockOpDraftRequest):
+    """自然语言 → 库存操作草稿（不执行，需人工确认）。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.draft_stock_op(req.text)
+
+
+@app.post("/api/llm/execute-draft", response_model=GenericResult)
+def llm_execute_draft(req: ExecuteDraftRequest):
+    """确认并执行草稿。通过现有业务逻辑执行，不绕过任何规则。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.execute_draft(req.op, req.fields)
 
 
 def main() -> None:
