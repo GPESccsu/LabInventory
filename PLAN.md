@@ -76,3 +76,44 @@ python inv.py --help                           → exit 0
 ```bash
 git revert <commit-hash>
 ```
+
+## Phase 3（LLM 集成层 — Mock Provider）已完成
+
+### 目标
+为系统增加自然语言交互能力的基础架构。Phase 1 使用纯规则匹配的 Mock Provider，零外部依赖，为后续接入本地/云端 LLM 提供可插拔接口。
+
+### 新增文件
+| 文件 | 说明 |
+|------|------|
+| `backend/app/llm/__init__.py` | 包入口：`get_provider()` 单例工厂 + 公共导出 |
+| `backend/app/llm/config.py` | `LLMConfig` 数据类，从 7 个 `LABINV_LLM_*` 环境变量读取配置 |
+| `backend/app/llm/base.py` | `BaseLLMProvider` 抽象基类（chat / classify_intent / extract_fields / summarize） |
+| `backend/app/llm/mock_provider.py` | `MockProvider`：关键词+正则实现意图分类和字段抽取，不依赖外部服务 |
+| `backend/app/llm/intent.py` | `Intent` 枚举 + `ParsedIntent` 数据类 + `parse_intent()` 流水线 |
+| `backend/app/llm/summarizer.py` | `summarize_result()` 将查询结果转中文摘要 |
+
+### 修改文件
+| 文件 | 变更说明 |
+|------|---------|
+| `backend/app/schemas.py` | 新增 `LLMChatMessage/Request/Response`、`LLMIntentRequest/Response`、`LLMConfigResponse` |
+| `backend/app/api.py` | 新增 3 个路由：`POST /api/llm/chat`、`POST /api/llm/intent`、`GET /api/llm/config` |
+| `CLAUDE.md` | 更新目录结构、环境变量表、API 端点表、新增 LLM 架构说明 |
+| `README.md` | 新增 LLM / 自然语言接口段落 |
+
+### 设计决策
+1. **Provider 抽象**：所有 LLM 调用通过 `BaseLLMProvider` 接口，业务层不直接 import 具体实现。
+2. **Mock 优先**：默认 `LABINV_LLM_PROVIDER=mock`，开发/测试零配置即可运行。
+3. **意图 + 字段分离**：`classify_intent()` 确定操作类型，`extract_fields()` 按 schema 抽取参数，`ParsedIntent` 聚合结果并报告缺失字段。
+4. **延迟 import**：API 路由中 `from backend.app.llm import ...` 放在函数体内，避免 LLM 模块的加载影响不使用 LLM 的场景。
+
+### 后续扩展路径
+- **Phase 3.1**：`LocalProvider`（Ollama / vLLM），通过 OpenAI 兼容 API 调用本地模型。
+- **Phase 3.2**：`CloudProvider`（OpenAI / Anthropic / DeepSeek），支持云端模型。
+- **Phase 3.3**：Streamlit UI 聊天面板，前端对接 `/api/llm/chat` 和 `/api/llm/intent`。
+
+### 验收结果
+```
+python inv.py --help                              → exit 0
+poetry run python -c "import backend.app.api"     → OK
+poetry run python -c "from backend.app.llm import get_provider; p = get_provider(); print(p.chat([{'role':'user','content':'帮助'}]))"  → OK
+```

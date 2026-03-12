@@ -264,3 +264,41 @@ class LedgerRow(BaseModel):
 
 class LedgerResponse(BaseModel):
     items: list[LedgerRow]
+
+
+# --- LLM Chat ---
+
+class LLMChatMessage(BaseModel):
+    role: str = Field(pattern=r"^(system|user|assistant)$")
+    content: str
+
+
+class LLMChatRequest(BaseModel):
+    messages: list[LLMChatMessage]
+
+
+class LLMChatResponse(BaseModel):
+    reply: str
+
+
+class LLMIntentRequest(BaseModel):
+    text: str
+
+
+class LLMIntentResponse(BaseModel):
+    intent: str
+    params: dict = {}
+    missing_fields: list[str] = []
+    is_complete: bool = False
+    is_query: bool = False
+    confidence: str = "mock"
+
+
+class LLMConfigResponse(BaseModel):
+    provider: str
+    model: str
+    api_base: str
+    api_key: str
+    api_type: str
+    timeout: int
+    max_tokens: int
