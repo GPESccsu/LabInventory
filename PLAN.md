@@ -106,14 +106,84 @@ git revert <commit-hash>
 3. **意图 + 字段分离**：`classify_intent()` 确定操作类型，`extract_fields()` 按 schema 抽取参数，`ParsedIntent` 聚合结果并报告缺失字段。
 4. **延迟 import**：API 路由中 `from backend.app.llm import ...` 放在函数体内，避免 LLM 模块的加载影响不使用 LLM 的场景。
 
-### 后续扩展路径
-- **Phase 3.1**：`LocalProvider`（Ollama / vLLM），通过 OpenAI 兼容 API 调用本地模型。
-- **Phase 3.2**：`CloudProvider`（OpenAI / Anthropic / DeepSeek），支持云端模型。
-- **Phase 3.3**：Streamlit UI 聊天面板，前端对接 `/api/llm/chat` 和 `/api/llm/intent`。
-
 ### 验收结果
 ```
 python inv.py --help                              → exit 0
 poetry run python -c "import backend.app.api"     → OK
 poetry run python -c "from backend.app.llm import get_provider; p = get_provider(); print(p.chat([{'role':'user','content':'帮助'}]))"  → OK
 ```
+
+## Phase 3.1（Local + Cloud Provider）已完成
+
+### 目标
+实现真实 LLM 调用能力，支持本地（Ollama/vLLM）和云端（OpenAI/Anthropic/DeepSeek）模型。
+
+### 新增文件
+| 文件 | 说明 |
+|------|------|
+| `backend/app/llm/local_provider.py` | `LocalProvider`：通过 OpenAI 兼容 API 调用本地模型（Ollama/vLLM/LocalAI） |
+| `backend/app/llm/cloud_provider.py` | `CloudProvider`：调用云端 API（OpenAI/Anthropic/DeepSeek），支持 `api_type` 切换 |
+
+### 设计决策
+1. **Local/Cloud 共用 `chat_json()`**：继承自 `BaseLLMProvider` 的结构化 JSON 输出方法，意图分类和字段抽取均通过此接口实现。
+2. **Anthropic 特殊处理**：Messages API 需要分离 system 消息、使用 `x-api-key` 头、解析 content blocks 数组。
+3. **api_type 路由**：CloudProvider 通过 `LABINV_LLM_API_TYPE` 区分 `openai` / `anthropic` / `deepseek`，各有默认 base URL。
+
+## Phase 3.2（NL 查询 + 草稿确认工作流）已完成
+
+### 目标
+实现自然语言驱动的数据库查询和库存操作，遵循"LLM 不编造数据、写操作需确认"原则。
+
+### 新增文件
+| 文件 | 说明 |
+|------|------|
+| `backend/app/llm/query_executor.py` | `execute_query()`：将 ParsedIntent 转为 InventoryService 真实查询 |
+| `backend/app/llm/draft_builder.py` | `build_draft()`：将 ParsedIntent 转为库存操作草稿（不执行） |
+| `backend/app/llm_service.py` | `LLMService` 业务门面：聚合 parse/query/draft/execute/resource_qa |
+
+### 新增 API 端点
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/llm/ping` | 检测 LLM provider 连通性 |
+| POST | `/api/llm/parse` | 意图解析 + 字段抽取 + 摘要（一次调用完成） |
+| POST | `/api/llm/query` | 自然语言 → 真实数据库查询 → 中文结果 |
+| POST | `/api/llm/draft-stock-op` | 自然语言 → 库存操作草稿（不执行） |
+| POST | `/api/llm/execute-draft` | 确认并执行草稿 |
+
+### 设计决策
+1. **查询与写操作分离**：查询类意图（query_stock/query_parts/query_ledger/project_status）直接执行返回数据；写操作（stock_in/out/move/adjust）只生成草稿，需用户确认后再执行。
+2. **LLMService 门面模式**：业务层只 import `llm_service`，不直接触碰 provider/config/intent。
+3. **execute_draft 复用现有逻辑**：通过 InventoryService 执行，不绕过任何业务规则和数据库 trigger。
+
+## Phase 3.3（项目资源 Q&A）已完成
+
+### 目标
+基于项目关联的资源信息（文件路径、URL、标签等），回答用户关于项目资源的问题。
+
+### 新增文件
+| 文件 | 说明 |
+|------|------|
+| `backend/app/llm/resource_qa.py` | `build_resource_context()` + `ask_resource_qa()`：构建资源上下文并通过 LLM 回答 |
+
+### 新增 API 端点
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/projects/{code}/resources/qa` | 项目资源问答 |
+
+---
+
+## 后续优化方向
+
+### P0（近期可做）
+- **Streamlit LLM 聊天面板**：前端对接 `/api/llm/chat` 和 `/api/llm/query`，提供自然语言交互 UI。
+- **测试覆盖扩展**：为 LLM 服务层、query_executor、draft_builder 补充单元测试。
+
+### P1（中期建议）
+- **批量操作优化**：BOM 批量设置、批量入库的性能优化（事务合并）。
+- **操作审计日志**：记录谁在什么时候通过什么方式（CLI/API/NL）执行了什么操作。
+- **库存报表导出**：按项目/库位/类别生成汇总报表（PDF/XLSX）。
+
+### P2（长期方向）
+- **多用户权限**：基于角色的操作权限控制。
+- **供应商管理**：BOM 成本追踪、供应商信息关联。
+- **条码/二维码**：库位标签打印与扫码操作。
