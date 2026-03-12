@@ -61,6 +61,10 @@ poetry install
 |------|--------|------|
 | `LABINV_DB` | `./lab_inventory.db` | 数据库文件路径（FastAPI 使用） |
 | `LABINV_API_BASE` | `http://127.0.0.1:8000` | API 地址（Streamlit 使用） |
+| `LABINV_LLM_PROVIDER` | `mock` | LLM 提供者：`mock`（默认） / `local` / `cloud` |
+| `LABINV_LLM_MODEL` | `""` | 模型名（如 `qwen2.5:7b`） |
+| `LABINV_LLM_API_BASE` | `http://localhost:11434` | LLM API 地址 |
+| `LABINV_LLM_API_KEY` | `""` | 云端 API 密钥（mock/local 时留空） |
 
 ### FastAPI 后端
 
@@ -277,6 +281,17 @@ python inv.py --db ./lab_inventory.db schema-export --format md --out docs/schem
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/txns/import-xlsx` | 批量导入交易记录 |
+
+### LLM / 自然语言接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/llm/chat` | 多轮对话（传入 messages 数组） |
+| POST | `/api/llm/intent` | 意图识别 + 字段抽取（传入 `text` 字符串） |
+| GET | `/api/llm/config` | 查看当前 LLM 配置（API key 已脱敏） |
+
+默认使用 Mock Provider（纯关键词/正则匹配），无需外部模型服务即可运行。
+设置 `LABINV_LLM_PROVIDER` 环境变量可切换为本地或云端模型（后续版本支持）。
 
 **HTTP 状态码：**`400` 业务错误 / `404` 资源不存在 / `409` 数据库被锁定
 

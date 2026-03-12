@@ -25,7 +25,14 @@ LabInventory/
 │       ├── core.py             # InventoryService class (used by API)
 │       ├── schemas.py          # Pydantic request/response models
 │       ├── api.py              # FastAPI app + all route handlers
-│       └── project_resources.py # Project resource CRUD + XLSX import
+│       ├── project_resources.py # Project resource CRUD + XLSX import
+│       └── llm/                # LLM integration layer
+│           ├── __init__.py     # get_provider() factory + re-exports
+│           ├── config.py       # LLMConfig (env-based)
+│           ├── base.py         # BaseLLMProvider abstract class
+│           ├── mock_provider.py # Mock provider (keyword/regex, no deps)
+│           ├── intent.py       # Intent enum + ParsedIntent + parse_intent()
+│           └── summarizer.py   # summarize_result() helper
 ├── frontend/
 │   └── streamlit_app.py        # Streamlit web UI (calls API via HTTP)
 ├── app/                        # Compatibility shim → backend.app
@@ -95,6 +102,13 @@ python inv.py --db ./lab_inventory.db --help
 |----------|---------|---------|
 | `LABINV_DB` | `./lab_inventory.db` | Database file path (used by FastAPI) |
 | `LABINV_API_BASE` | `http://127.0.0.1:8000` | API base URL (used by Streamlit) |
+| `LABINV_LLM_PROVIDER` | `mock` | LLM provider: `mock` / `local` / `cloud` |
+| `LABINV_LLM_MODEL` | `""` | Model name (e.g. `qwen2.5:7b`, `claude-sonnet-4-20250514`) |
+| `LABINV_LLM_API_BASE` | `http://localhost:11434` | LLM API base URL |
+| `LABINV_LLM_API_KEY` | `""` | API key for cloud providers |
+| `LABINV_LLM_API_TYPE` | `openai` | API type: `openai` / `anthropic` / `deepseek` |
+| `LABINV_LLM_TIMEOUT` | `30` | Request timeout in seconds |
+| `LABINV_LLM_MAX_TOKENS` | `2048` | Max generation tokens |
 
 ---
 
@@ -211,6 +225,9 @@ Base URL: `http://0.0.0.0:8000`
 | POST | `/api/projects/{code}/resources/check` | Check resource URI validity |
 | POST | `/api/projects/resources/import-xlsx` | Batch import resources from XLSX |
 | POST | `/api/txns/import-xlsx` | Batch import transactions from XLSX |
+| POST | `/api/llm/chat` | LLM multi-turn chat |
+| POST | `/api/llm/intent` | Intent classification + field extraction |
+| GET | `/api/llm/config` | Current LLM provider config (safe view) |
 
 ### Error HTTP Status Codes
 
@@ -261,6 +278,55 @@ InventoryError(RuntimeError)
 ├── DatabaseLockedError   # "database is locked"
 └── NotFoundError         # resource doesn't exist
 ```
+
+---
+
+## LLM Integration (`backend/app/llm/`)
+
+### Architecture
+
+```
+User natural language input
+        │
+        ▼
+  parse_intent(provider, text)      ← intent.py
+        │
+        ├── classify_intent()       ← BaseLLMProvider method
+        └── extract_fields()        ← BaseLLMProvider method
+        │
+        ▼
+  ParsedIntent { intent, params, missing_fields }
+        │
+        ▼
+  InventoryService (existing)       ← core.py (unchanged)
+        │
+        ▼
+  summarize_result(provider, ...)   ← summarizer.py
+```
+
+### Provider Abstraction
+
+`BaseLLMProvider` (`base.py`) defines four abstract methods:
+- `chat(messages)` → multi-turn conversation
+- `classify_intent(text, candidates)` → intent string
+- `extract_fields(text, field_schema)` → extracted params dict
+- `summarize(data, instruction)` → Chinese text summary
+
+Current implementations:
+- **`MockProvider`** — keyword/regex matching, zero external dependencies. Default.
+- Future: `LocalProvider` (Ollama/vLLM), `CloudProvider` (OpenAI/Anthropic/DeepSeek).
+
+### Intent System
+
+`Intent` enum in `intent.py` covers: `stock_in`, `stock_out`, `stock_move`, `stock_adjust`, `reserve`, `release`, `consume`, `query_stock`, `query_parts`, `query_ledger`, `project_status`, `help`, `unknown`.
+
+Each intent has a `field_schema` (what fields to extract) and `required_fields` (what must be present for the action to execute). `ParsedIntent.is_complete` checks all required fields are filled.
+
+### Adding a New LLM Provider
+
+1. Create `backend/app/llm/<name>_provider.py` implementing `BaseLLMProvider`.
+2. Add a branch in `get_provider()` in `__init__.py`.
+3. User sets `LABINV_LLM_PROVIDER=<name>` and related env vars.
 
 ---
 
