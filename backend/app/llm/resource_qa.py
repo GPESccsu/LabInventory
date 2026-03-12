@@ -174,6 +174,23 @@ def ask_resource_qa(
             "total_resources": 0,
         }
 
+    # 默认 provider 为 mock，其 chat() 仅做意图识别，
+    # 不适合资源问答场景。这里提供无模型依赖的上下文回退回答，
+    # 保证零配置安装也可返回可用结果。
+    if provider.config.provider == "mock":
+        preview = "\n".join(f"- {name}" for name in context.source_names[:5])
+        answer = (
+            "当前处于 Mock LLM 模式，已基于项目资源元数据返回参考信息。\n"
+            f"可参考资源（共 {context.total_resources} 条，展示前 {min(len(context.source_names), 5)} 条）：\n"
+            f"{preview}\n\n"
+            "若需更智能的自然语言问答，请将 LABINV_LLM_PROVIDER 配置为 local 或 cloud。"
+        )
+        return {
+            "answer": answer,
+            "sources": context.source_names,
+            "total_resources": context.total_resources,
+        }
+
     user_prompt = (
         f"以下是当前项目的资源列表（共 {context.total_resources} 条）：\n"
         f"{context.text}\n\n"
