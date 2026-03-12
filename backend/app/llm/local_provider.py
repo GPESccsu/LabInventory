@@ -58,34 +58,35 @@ class LocalProvider(BaseLLMProvider):
         return self._call_chat(messages, **kwargs)
 
     def classify_intent(self, text: str, candidates: list[str]) -> str:
-        prompt = (
-            f"你是一个库存管理意图分类器。请将用户输入分类为以下意图之一：\n"
-            f"{', '.join(candidates)}\n\n"
-            f"用户输入：{text}\n\n"
-            f"请只返回意图名称，不要其他内容。"
+        system = (
+            "你是一个库存管理意图分类器。"
+            f"请将用户输入分类为以下意图之一：{', '.join(candidates)}"
         )
-        result = self._call_chat([{"role": "user", "content": prompt}], max_tokens=32)
-        result = result.strip().strip('"').strip("'")
-        return result if result in candidates else "unknown"
+        try:
+            result = self.chat_json(
+                system_prompt=system,
+                user_prompt=text,
+                schema_hint={"intent": "str — 意图名称，必须是候选列表中的一个"},
+            )
+            intent = str(result.get("intent", "unknown")).strip()
+            return intent if intent in candidates else "unknown"
+        except (ValueError, RuntimeError):
+            return "unknown"
 
     def extract_fields(self, text: str, field_schema: dict[str, str]) -> dict[str, Any]:
-        schema_desc = json.dumps(field_schema, ensure_ascii=False)
-        prompt = (
-            f"从以下文本中提取结构化字段。\n"
-            f"字段定义：{schema_desc}\n\n"
-            f"用户输入：{text}\n\n"
-            f"请以 JSON 格式返回提取到的字段，未提取到的字段不要包含。"
-            f"只返回 JSON，不要其他内容。"
+        system = (
+            "从用户输入的自然语言中提取结构化字段。"
+            "未提取到的字段不要包含在结果中。"
         )
-        result = self._call_chat([{"role": "user", "content": prompt}], max_tokens=256)
+        schema_hint = {k: f"{v} — 字段值" for k, v in field_schema.items()}
         try:
-            # 尝试从回复中提取 JSON
-            result = result.strip()
-            if result.startswith("```"):
-                result = result.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            return json.loads(result)
-        except (json.JSONDecodeError, IndexError):
-            logger.warning("字段抽取返回非 JSON: %s", result[:200])
+            return self.chat_json(
+                system_prompt=system,
+                user_prompt=text,
+                schema_hint=schema_hint,
+            )
+        except (ValueError, RuntimeError):
+            logger.warning("extract_fields chat_json 失败，输入: %s", text[:200])
             return {}
 
     def summarize(self, data: str, instruction: str = "") -> str:

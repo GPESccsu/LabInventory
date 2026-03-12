@@ -211,6 +211,38 @@ class MockProvider(BaseLLMProvider):
                     return intent
         return "unknown"
 
+    def chat_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema_hint: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Mock 版 chat_json：基于关键词和正则构造结构化结果。
+
+        如果 schema_hint 提供了字段定义，尝试从 user_prompt 中提取对应字段。
+        否则返回包含 raw 回复的 dict。
+        """
+        result: dict[str, Any] = {}
+
+        if schema_hint:
+            # 将 schema_hint 的 key 当作字段名，尝试用 extract_fields 填充
+            field_types: dict[str, str] = {}
+            for k, v in schema_hint.items():
+                # schema_hint value 可能是 "str — 说明" 或 "int" 等
+                type_str = str(v).split("—")[0].split("-")[0].strip().lower()
+                if type_str in ("str", "int", "float", "bool", "list"):
+                    field_types[k] = type_str
+                else:
+                    field_types[k] = "str"
+            result = self.extract_fields(user_prompt, field_types)
+
+        # 如果有 intent 相关的 schema 但未提取到 intent，尝试分类
+        if "intent" in (schema_hint or {}) and "intent" not in result:
+            all_intents = [kw[0] for kw in _INTENT_KEYWORDS]
+            result["intent"] = self.classify_intent(user_prompt, all_intents)
+
+        return result
+
     def summarize(self, data: str, instruction: str = "") -> str:
         try:
             parsed = json.loads(data)
