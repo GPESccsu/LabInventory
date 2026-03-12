@@ -20,7 +20,9 @@ LabInventory/
 │   ├── core.py             # InventoryService（供 API 调用）
 │   ├── schemas.py          # Pydantic 请求/响应模型
 │   ├── api.py              # FastAPI 路由
-│   └── project_resources.py # 项目资源 CRUD + XLSX 导入
+│   ├── project_resources.py # 项目资源 CRUD + XLSX 导入
+│   ├── llm_service.py      # LLM 服务门面（业务层唯一入口）
+│   └── llm/                # LLM 集成层（mock/local/cloud providers）
 ├── frontend/
 │   └── streamlit_app.py    # Streamlit Web UI
 ├── app/                    # 兼容层（转发到 backend.app）
@@ -65,6 +67,9 @@ poetry install
 | `LABINV_LLM_MODEL` | `""` | 模型名（如 `qwen2.5:7b`） |
 | `LABINV_LLM_API_BASE` | `http://localhost:11434` | LLM API 地址 |
 | `LABINV_LLM_API_KEY` | `""` | 云端 API 密钥（mock/local 时留空） |
+| `LABINV_LLM_API_TYPE` | `openai` | API 类型：`openai` / `anthropic` / `deepseek` |
+| `LABINV_LLM_TIMEOUT` | `30` | LLM 请求超时（秒） |
+| `LABINV_LLM_MAX_TOKENS` | `2048` | 最大生成 token 数 |
 
 ### FastAPI 后端
 
@@ -276,11 +281,19 @@ python inv.py --db ./lab_inventory.db schema-export --format md --out docs/schem
 | POST | `/api/projects/{code}/resources/check` | 检查资源路径有效性 |
 | POST | `/api/projects/resources/import-xlsx` | 从 XLSX 批量导入资源 |
 
-### XLSX 导入
+### XLSX 导入导出
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/api/txns/export-template` | 下载交易 XLSX 模板 |
 | POST | `/api/txns/import-xlsx` | 批量导入交易记录 |
+
+### LCSC 导入
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/lcsc/fetch` | 从立创商城 URL 抓取物料数据 |
+| POST | `/api/lcsc/import-xlsx` | 从立创 XLSX 文件批量导入 |
 
 ### LLM / 自然语言接口
 
@@ -289,9 +302,22 @@ python inv.py --db ./lab_inventory.db schema-export --format md --out docs/schem
 | POST | `/api/llm/chat` | 多轮对话（传入 messages 数组） |
 | POST | `/api/llm/intent` | 意图识别 + 字段抽取（传入 `text` 字符串） |
 | GET | `/api/llm/config` | 查看当前 LLM 配置（API key 已脱敏） |
+| POST | `/api/llm/ping` | 检测 LLM provider 连通性 |
+| POST | `/api/llm/parse` | 意图解析 + 字段抽取 + 摘要（一次调用） |
+| POST | `/api/llm/query` | 自然语言查询 → 真实数据库结果 → 中文回答 |
+| POST | `/api/llm/draft-stock-op` | 自然语言 → 库存操作草稿（不执行，需确认） |
+| POST | `/api/llm/execute-draft` | 确认并执行草稿操作 |
+| POST | `/api/projects/{code}/resources/qa` | 项目资源问答（基于关联资源回答） |
 
-默认使用 Mock Provider（纯关键词/正则匹配），无需外部模型服务即可运行。
-设置 `LABINV_LLM_PROVIDER` 环境变量可切换为本地或云端模型（后续版本支持）。
+支持三种 LLM Provider：
+
+| Provider | 设置方式 | 说明 |
+|----------|---------|------|
+| `mock` | 默认，无需配置 | 纯关键词/正则匹配，零外部依赖 |
+| `local` | `LABINV_LLM_PROVIDER=local` + `LABINV_LLM_MODEL=<模型名>` | 调用本地推理服务（Ollama/vLLM/LocalAI） |
+| `cloud` | `LABINV_LLM_PROVIDER=cloud` + `LABINV_LLM_API_KEY=<密钥>` | 调用云端 API（OpenAI/Anthropic/DeepSeek） |
+
+自然语言工作流：查询类意图直接执行返回数据；写操作（入库/出库/移库/调整）生成草稿，需用户确认后执行。LLM 不编造数据，所有结果来自 SQLite 真实查询。
 
 **HTTP 状态码：**`400` 业务错误 / `404` 资源不存在 / `409` 数据库被锁定
 
@@ -330,7 +356,7 @@ python inv.py --db ./lab_inventory.db schema-export --format md --out docs/schem
 poetry run pytest
 ```
 
-测试覆盖核心服务层（`test_core.py`）、API 端点（`test_api.py`）、CLI 入口（`test_cli_smoke.py`）、API 契约校验（`test_api_import.py`）、事务完整性（`test_txn_integrity.py`），共 65 个用例。
+测试覆盖核心服务层（`test_core.py`）、API 端点（`test_api.py`）、CLI 入口（`test_cli_smoke.py`）、API 契约校验（`test_api_import.py`）、事务完整性（`test_txn_integrity.py`）。
 
 ### 最小验收命令
 

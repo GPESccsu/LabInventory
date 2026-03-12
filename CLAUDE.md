@@ -26,13 +26,19 @@ LabInventory/
 │       ├── schemas.py          # Pydantic request/response models
 │       ├── api.py              # FastAPI app + all route handlers
 │       ├── project_resources.py # Project resource CRUD + XLSX import
+│       ├── llm_service.py      # LLMService facade (business layer LLM entry point)
 │       └── llm/                # LLM integration layer
 │           ├── __init__.py     # get_provider() factory + re-exports
 │           ├── config.py       # LLMConfig (env-based)
 │           ├── base.py         # BaseLLMProvider abstract class
 │           ├── mock_provider.py # Mock provider (keyword/regex, no deps)
+│           ├── local_provider.py # Local LLM (Ollama/vLLM via OpenAI-compat API)
+│           ├── cloud_provider.py # Cloud LLM (OpenAI/Anthropic/DeepSeek)
 │           ├── intent.py       # Intent enum + ParsedIntent + parse_intent()
-│           └── summarizer.py   # summarize_result() helper
+│           ├── summarizer.py   # summarize_result() helper
+│           ├── query_executor.py # ParsedIntent → real DB query execution
+│           ├── draft_builder.py # ParsedIntent → stock operation draft (no execute)
+│           └── resource_qa.py  # Project resource Q&A via LLM
 ├── frontend/
 │   └── streamlit_app.py        # Streamlit web UI (calls API via HTTP)
 ├── app/                        # Compatibility shim → backend.app
@@ -52,8 +58,16 @@ LabInventory/
 │   ├── export_bom_parts_data.py
 │   ├── smoke_test_ledger.py    # Ledger smoke test
 │   └── project_bom_allocation_example.py
-├── data/                       # JSON exports, SQL schema snapshots, docs
-├── schema/                     # DB schema SQL files
+├── tests/                      # Automated tests (pytest)
+│   ├── conftest.py             # Shared fixtures (tmp DB, test client)
+│   ├── test_core.py            # InventoryService unit tests
+│   ├── test_api.py             # FastAPI endpoint tests
+│   ├── test_cli_smoke.py       # CLI --help smoke tests
+│   ├── test_api_import.py      # API import + schema completeness
+│   └── test_txn_integrity.py   # Transaction integrity tests
+├── data/                       # Reference data and templates
+│   └── reference/              # locations CSV, parts data, resource templates
+├── schema/                     # DB schema JSON snapshots
 ├── docs/                       # Additional documentation
 ├── datasheets/                 # Downloaded component datasheets (gitignored)
 ├── lab_inventory.db            # SQLite database (main data store)
@@ -208,6 +222,24 @@ proj-forms --proj <CODE> [--outbound-csv <PATH>] [--inbound-csv <PATH>] [--lcsc-
 
 Base URL: `http://0.0.0.0:8000`
 
+### System & Data
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Health check (parts/stock/project counts) |
+| GET | `/api/parts?query=` | Search parts by MPN/name/category/package |
+| GET | `/api/stock?query=&location=` | Query stock levels |
+| POST | `/api/stock/in` | Stock in |
+| POST | `/api/stock/out` | Stock out |
+| POST | `/api/stock/move` | Stock move |
+| POST | `/api/stock/adjust` | Stock adjust |
+| GET | `/api/locations` | List all locations |
+| GET | `/api/ledger?project=&mpn=&since=` | Query transaction ledger |
+| GET | `/api/txns/export-template` | Download XLSX transaction template |
+| POST | `/api/txns/import-xlsx` | Batch import transactions from XLSX |
+
+### Projects
+
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/projects` | Create or update a project |
@@ -219,15 +251,37 @@ Base URL: `http://0.0.0.0:8000`
 | POST | `/api/projects/{code}/reserve` | Reserve parts for a project |
 | POST | `/api/allocs/{id}/release` | Release an allocation |
 | POST | `/api/allocs/{id}/consume` | Consume an allocation |
+
+### Project Resources
+
+| Method | Path | Description |
+|--------|------|-------------|
 | POST | `/api/projects/{code}/resources` | Add/update a project resource |
 | GET | `/api/projects/{code}/resources` | List project resources |
 | DELETE | `/api/projects/{code}/resources` | Delete a project resource |
 | POST | `/api/projects/{code}/resources/check` | Check resource URI validity |
+| POST | `/api/projects/{code}/resources/qa` | Resource Q&A (LLM-powered) |
 | POST | `/api/projects/resources/import-xlsx` | Batch import resources from XLSX |
-| POST | `/api/txns/import-xlsx` | Batch import transactions from XLSX |
+
+### LCSC Import
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/lcsc/fetch` | Fetch part data from LCSC URL |
+| POST | `/api/lcsc/import-xlsx` | Batch import from LCSC XLSX |
+
+### LLM / Natural Language
+
+| Method | Path | Description |
+|--------|------|-------------|
 | POST | `/api/llm/chat` | LLM multi-turn chat |
 | POST | `/api/llm/intent` | Intent classification + field extraction |
 | GET | `/api/llm/config` | Current LLM provider config (safe view) |
+| POST | `/api/llm/ping` | Test LLM provider connectivity |
+| POST | `/api/llm/parse` | Intent parse + fields + summary (one call) |
+| POST | `/api/llm/query` | NL → real DB query → Chinese result |
+| POST | `/api/llm/draft-stock-op` | NL → stock operation draft (no execute) |
+| POST | `/api/llm/execute-draft` | Confirm and execute a draft operation |
 
 ### Error HTTP Status Codes
 
@@ -247,10 +301,16 @@ CLI (inv.py main)          Streamlit UI (HTTP client)
         ▼                           ▼ (HTTP)
 backend/app/inv.py         FastAPI (backend/app/api.py)
   business functions               │
-        │                          ▼
-        └──────────── InventoryService (backend/app/core.py)
-                               │
-                     backend/app/inv.py (shared functions)
+        │                    ┌─────┴──────┐
+        │                    ▼            ▼
+        │            LLMService     InventoryService
+        │          (llm_service.py)   (core.py)
+        │                │            │
+        │          llm/ package       │
+        │          (providers,        │
+        │           intent, query)    │
+        │                             │
+        └──────────── backend/app/inv.py (shared functions)
                                │
                       backend/app/db.py (connect / init_db)
                                │
@@ -304,17 +364,50 @@ User natural language input
   summarize_result(provider, ...)   ← summarizer.py
 ```
 
+### LLM Service Facade
+
+`LLMService` (`backend/app/llm_service.py`) is the **single entry point** for all LLM operations. Business code (API routes) only imports `llm_service`, never directly touches providers or config. Key methods:
+- `chat(messages)` → multi-turn conversation
+- `parse(text)` → intent + field extraction → `ParsedIntent`
+- `query(text)` → NL → real DB query → structured result with Chinese message
+- `draft_stock_op(text)` → NL → stock operation draft (not executed)
+- `execute_draft(op, fields)` → confirm and execute a draft via InventoryService
+- `resource_qa(project_code, question)` → project resource Q&A
+- `ping()` → test provider connectivity
+
 ### Provider Abstraction
 
-`BaseLLMProvider` (`base.py`) defines four abstract methods:
+`BaseLLMProvider` (`base.py`) defines four abstract methods + `chat_json()` utility:
 - `chat(messages)` → multi-turn conversation
 - `classify_intent(text, candidates)` → intent string
 - `extract_fields(text, field_schema)` → extracted params dict
 - `summarize(data, instruction)` → Chinese text summary
+- `chat_json(system_prompt, user_prompt, schema_hint)` → structured JSON output (shared)
 
 Current implementations:
-- **`MockProvider`** — keyword/regex matching, zero external dependencies. Default.
-- Future: `LocalProvider` (Ollama/vLLM), `CloudProvider` (OpenAI/Anthropic/DeepSeek).
+- **`MockProvider`** — keyword/regex matching, zero external dependencies. Default (`LABINV_LLM_PROVIDER=mock`).
+- **`LocalProvider`** — calls local models via OpenAI-compatible API (Ollama/vLLM/LocalAI). Set `LABINV_LLM_PROVIDER=local`.
+- **`CloudProvider`** — calls cloud APIs (OpenAI/Anthropic/DeepSeek). Set `LABINV_LLM_PROVIDER=cloud` + `LABINV_LLM_API_KEY`.
+
+### Query & Draft Workflow
+
+```
+User NL input
+      │
+      ▼
+  parse_intent()           → ParsedIntent { intent, params, missing_fields }
+      │
+      ├─ Query intents ──→ execute_query()  → real DB data + Chinese message
+      │                      (query_executor.py)
+      │
+      └─ Write intents ──→ build_draft()    → operation draft (NOT executed)
+                             (draft_builder.py)
+                                   │
+                             user confirms
+                                   │
+                                   ▼
+                           execute_draft()   → InventoryService (real execution)
+```
 
 ### Intent System
 
@@ -387,14 +480,25 @@ These rules come from `AGENTS.md` and must be strictly followed:
 # Run all tests
 poetry run pytest
 
+# Run with verbose output
+poetry run pytest -v
+
 # Quick sanity check (no test framework needed)
 python inv.py --help
 ```
 
-No formal test suite exists beyond the scripts in `scripts/`. When adding features, verify manually with:
+Test suite (`tests/`):
+- **`test_core.py`** — InventoryService unit tests (stock ops, projects, BOM, alloc)
+- **`test_api.py`** — FastAPI endpoint integration tests (requires fastapi/httpx)
+- **`test_cli_smoke.py`** — CLI `--help` smoke tests for all subcommands
+- **`test_api_import.py`** — API module import + schema completeness checks
+- **`test_txn_integrity.py`** — Transaction integrity and edge case tests
+
+### Minimum acceptance checks
 ```bash
-python inv.py --db ./lab_inventory.db proj-new --code TEST-001 --name "Test Project"
-python inv.py --db ./lab_inventory.db proj-status --proj TEST-001
+python inv.py --help                              # CLI entry point works
+poetry run python -c "import backend.app.api"     # API imports without error
+poetry run pytest -v                              # All tests pass
 ```
 
 ---
