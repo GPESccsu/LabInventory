@@ -29,3 +29,9 @@ Thumbs.db
 /datasheets/
 schema/*.ipBtbz
 schema/*.ebLvPU
+
+*.db
+*.xlsx
+*.xls
+*.pdf
+*.bat
