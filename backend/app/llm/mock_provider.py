@@ -73,7 +73,7 @@ class MockProvider(BaseLLMProvider):
                 "请用自然语言描述您的需求。"
             )
         if intent == "unknown":
-            return f"抱歉，我无法理解您的意图。请尝试更明确地描述您的需求，或输入"帮助"查看支持的操作。"
+            return "抱歉，我无法理解您的意图。请尝试更明确地描述您的需求，或输入「帮助」查看支持的操作。"
         return f"[Mock] 识别意图: {intent}，请通过结构化接口调用。"
 
     def extract_fields(self, text: str, field_schema: dict[str, str]) -> dict[str, Any]:

@@ -52,12 +52,19 @@ def get_provider(config: LLMConfig | None = None) -> BaseLLMProvider:
         from backend.app.llm.mock_provider import MockProvider
 
         _provider_instance = MockProvider(config)
+    elif config.provider == "local":
+        from backend.app.llm.local_provider import LocalProvider
+
+        _provider_instance = LocalProvider(config)
+    elif config.provider == "cloud":
+        from backend.app.llm.cloud_provider import CloudProvider
+
+        _provider_instance = CloudProvider(config)
     else:
-        # Phase 1 只支持 mock；后续 phase 在此扩展 local / cloud
         raise ValueError(
             f"不支持的 LLM provider: {config.provider!r}。"
-            f"当前仅支持: mock。"
-            f"请设置环境变量 LABINV_LLM_PROVIDER=mock"
+            f"支持的值: mock, local, cloud。"
+            f"请设置环境变量 LABINV_LLM_PROVIDER"
         )
 
     return _provider_instance

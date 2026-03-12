@@ -20,6 +20,9 @@ from backend.app.schemas import (
     LLMConfigResponse,
     LLMIntentRequest,
     LLMIntentResponse,
+    LLMParseRequest,
+    LLMParseResponse,
+    LLMPingResponse,
     LocationListResponse,
     PartListResponse,
     ProjectAllocResponse,
@@ -259,29 +262,53 @@ def txn_export_template():
 
 @app.post("/api/llm/chat", response_model=LLMChatResponse)
 def llm_chat(req: LLMChatRequest):
-    from backend.app.llm import get_provider
+    from backend.app.llm_service import llm_service
 
-    provider = get_provider()
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
-    reply = provider.chat(messages)
+    reply = llm_service.chat(messages)
     return {"reply": reply}
 
 
 @app.post("/api/llm/intent", response_model=LLMIntentResponse)
 def llm_intent(req: LLMIntentRequest):
-    from backend.app.llm import get_provider, parse_intent
+    from backend.app.llm_service import llm_service
 
-    provider = get_provider()
-    result = parse_intent(provider, req.text)
+    result = llm_service.parse(req.text)
     return result.to_dict()
 
 
 @app.get("/api/llm/config", response_model=LLMConfigResponse)
 def llm_config():
-    from backend.app.llm.config import LLMConfig
+    from backend.app.llm_service import llm_service
 
-    cfg = LLMConfig.from_env()
-    return cfg.safe_dict()
+    return llm_service.get_config()
+
+
+@app.post("/api/llm/ping", response_model=LLMPingResponse)
+def llm_ping():
+    """检测当前 LLM provider 连通性。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.ping()
+
+
+@app.post("/api/llm/parse", response_model=LLMParseResponse)
+def llm_parse(req: LLMParseRequest):
+    """自然语言解析：意图分类 + 字段抽取 + 摘要（一次调用完成）。"""
+    from backend.app.llm_service import llm_service
+
+    result = llm_service.parse(req.text)
+    summary = ""
+    if result.is_complete and result.is_query:
+        summary = f"[{result.intent}] 参数完整，可直接执行查询。"
+    elif not result.is_complete:
+        summary = f"[{result.intent}] 缺少字段: {', '.join(result.missing_fields)}"
+    else:
+        summary = f"[{result.intent}] 参数完整，确认后可执行。"
+    return {
+        **result.to_dict(),
+        "summary": summary,
+    }
 
 
 def main() -> None:

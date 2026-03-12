@@ -302,3 +302,24 @@ class LLMConfigResponse(BaseModel):
     api_type: str
     timeout: int
     max_tokens: int
+
+
+class LLMPingResponse(BaseModel):
+    ok: bool
+    provider: str
+    model: str
+    detail: str = ""
+
+
+class LLMParseRequest(BaseModel):
+    text: str
+
+
+class LLMParseResponse(BaseModel):
+    intent: str
+    params: dict = {}
+    missing_fields: list[str] = []
+    is_complete: bool = False
+    is_query: bool = False
+    confidence: str = "mock"
+    summary: str = ""
