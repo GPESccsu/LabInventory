@@ -15,6 +15,11 @@ from backend.app.schemas import (
     HealthResponse,
     ImportResponse,
     LedgerResponse,
+    LLMChatRequest,
+    LLMChatResponse,
+    LLMConfigResponse,
+    LLMIntentRequest,
+    LLMIntentResponse,
     LocationListResponse,
     PartListResponse,
     ProjectAllocResponse,
@@ -248,6 +253,35 @@ def txn_export_template():
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=txn_template.xlsx"},
     )
+
+
+# --- LLM ---
+
+@app.post("/api/llm/chat", response_model=LLMChatResponse)
+def llm_chat(req: LLMChatRequest):
+    from backend.app.llm import get_provider
+
+    provider = get_provider()
+    messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    reply = provider.chat(messages)
+    return {"reply": reply}
+
+
+@app.post("/api/llm/intent", response_model=LLMIntentResponse)
+def llm_intent(req: LLMIntentRequest):
+    from backend.app.llm import get_provider, parse_intent
+
+    provider = get_provider()
+    result = parse_intent(provider, req.text)
+    return result.to_dict()
+
+
+@app.get("/api/llm/config", response_model=LLMConfigResponse)
+def llm_config():
+    from backend.app.llm.config import LLMConfig
+
+    cfg = LLMConfig.from_env()
+    return cfg.safe_dict()
 
 
 def main() -> None:
