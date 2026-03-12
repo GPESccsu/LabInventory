@@ -13,6 +13,7 @@ from backend.app.llm.config import LLMConfig
 from backend.app.llm.draft_builder import WRITE_INTENTS, build_draft
 from backend.app.llm.intent import Intent, ParsedIntent
 from backend.app.llm.query_executor import execute_query
+from backend.app.llm.resource_qa import ask_resource_qa, build_resource_context
 
 
 class LLMService:
@@ -195,6 +196,22 @@ class LLMService:
 
         except Exception as exc:
             return {"ok": False, "detail": f"执行失败：{exc}"}
+
+    def resource_qa(self, project_code: str, question: str) -> dict[str, Any]:
+        """项目资源问答：基于项目关联资源回答用户问题。
+
+        Args:
+            project_code: 项目编码。
+            question: 用户问题。
+
+        Returns:
+            {"answer": str, "sources": list[str], "total_resources": int}
+        """
+        svc = self._get_service()
+        resources = svc.list_resources(project_code)
+        context = build_resource_context(resources, query=question)
+        provider = get_provider()
+        return ask_resource_qa(provider, question, context)
 
     def summarize(self, intent: str, data: Any, instruction: str = "") -> str:
         """结构化数据 → 中文摘要。"""

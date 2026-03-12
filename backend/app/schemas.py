@@ -374,3 +374,15 @@ class ExecuteDraftRequest(BaseModel):
     """确认执行草稿。fields 是用户确认/修改后的最终字段值。"""
     op: str = Field(pattern=r"^(stock_in|stock_out|stock_move|stock_adjust)$")
     fields: dict
+
+
+# --- Resource QA ---
+
+class ResourceQARequest(BaseModel):
+    question: str
+
+
+class ResourceQAResponse(BaseModel):
+    answer: str
+    sources: list[str] = []
+    total_resources: int = 0

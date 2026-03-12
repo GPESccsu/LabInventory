@@ -40,6 +40,8 @@ from backend.app.schemas import (
     ResourceCheckResponse,
     ResourceDeleteRequest,
     ResourceListResponse,
+    ResourceQARequest,
+    ResourceQAResponse,
     ResourceUpsertRequest,
     StockAdjustRequest,
     StockInRequest,
@@ -209,6 +211,14 @@ def delete_resource(code: str, req: ResourceDeleteRequest):
 @app.post("/api/projects/{code}/resources/check", response_model=ResourceCheckResponse)
 def check_resource(code: str):
     return {"items": service.check_resource(code)}
+
+
+@app.post("/api/projects/{code}/resources/qa", response_model=ResourceQAResponse)
+def resource_qa(code: str, req: ResourceQARequest):
+    """项目资源问答：基于项目关联的资源信息回答用户问题。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.resource_qa(code, req.question)
 
 
 @app.post("/api/projects/resources/import-xlsx", response_model=ImportResponse)
