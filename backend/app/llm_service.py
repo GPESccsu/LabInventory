@@ -196,6 +196,34 @@ class LLMService:
         except Exception as exc:
             return {"ok": False, "detail": f"执行失败：{exc}"}
 
+    def resource_qa(self, project_code: str, question: str) -> dict[str, Any]:
+        """项目资源问答：基于项目关联资源回答用户问题。
+
+        Args:
+            project_code: 项目编码。
+            question: 用户问题。
+
+        Returns:
+            {"answer": str, "sources": [...], "has_sufficient_context": bool, "project_code": str}
+        """
+        from backend.app.llm.resource_qa import ask_resource_qa
+
+        svc = self._get_service()
+        # 获取项目资源列表
+        try:
+            resources = svc.list_resources(project_code)
+        except Exception as exc:
+            return {
+                "answer": f"获取项目资源失败：{exc}",
+                "sources": [],
+                "has_sufficient_context": False,
+                "project_code": project_code,
+            }
+
+        provider = get_provider()
+        result = ask_resource_qa(provider, project_code, question, resources)
+        return {**result.to_dict(), "project_code": project_code}
+
     def summarize(self, intent: str, data: Any, instruction: str = "") -> str:
         """结构化数据 → 中文摘要。"""
         provider = get_provider()

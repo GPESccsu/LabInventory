@@ -108,13 +108,27 @@ class MockProvider(BaseLLMProvider):
         super().__init__(config)
 
     def chat(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
+        # 检查是否为资源问答上下文
+        system_msg = ""
         user_msg = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
+        for m in messages:
+            if m.get("role") == "system":
+                system_msg = m.get("content", "")
+            elif m.get("role") == "user":
                 user_msg = m.get("content", "")
-                break
+
+        if not user_msg:
+            # fallback: 从最后一条 user 消息取
+            for m in reversed(messages):
+                if m.get("role") == "user":
+                    user_msg = m.get("content", "")
+                    break
         if not user_msg:
             return "请输入您的问题。"
+
+        # 资源问答模式（检测 system prompt 关键词）
+        if "项目资源问答助手" in system_msg:
+            return self._mock_resource_qa(user_msg)
 
         intent = self.classify_intent(user_msg, [c[0] for c in _INTENT_KEYWORDS])
         if intent == "help":
@@ -130,6 +144,37 @@ class MockProvider(BaseLLMProvider):
         if intent == "unknown":
             return "抱歉，我无法理解您的意图。请尝试更明确地描述您的需求，或输入「帮助」查看支持的操作。"
         return f"[Mock] 识别意图: {intent}，请通过结构化接口调用。"
+
+    def _mock_resource_qa(self, user_msg: str) -> str:
+        """Mock 模式下的资源问答：从上下文中提取资源名称并构造回复。"""
+        # 从 user_msg 中提取资源信息
+        resource_names: list[str] = []
+        for line in user_msg.split("\n"):
+            if "名称：" in line:
+                # 提取 "名称：XXX" 中的 XXX
+                m = re.search(r"名称：([^|]+)", line)
+                if m:
+                    resource_names.append(m.group(1).strip())
+
+        # 提取问题部分
+        question = ""
+        m = re.search(r"问题：(.+)", user_msg, re.DOTALL)
+        if m:
+            question = m.group(1).strip()
+
+        if "暂无关联资源" in user_msg:
+            return "当前项目资源中未找到足够依据，该项目暂无关联资源。"
+
+        if not resource_names:
+            return "当前项目资源中未找到足够依据来回答您的问题。"
+
+        # 构造 mock 回答
+        resource_list = "、".join(f"「{n}」" for n in resource_names[:5])
+        return (
+            f"[Mock 问答] 该项目共有 {len(resource_names)} 个关联资源：{resource_list}"
+            + ("..." if len(resource_names) > 5 else "") + "。\n"
+            f"关于您的问题「{question[:50]}」，建议查阅以上资源获取详细信息。"
+        )
 
     def extract_fields(self, text: str, field_schema: dict[str, str]) -> dict[str, Any]:
         result: dict[str, Any] = {}

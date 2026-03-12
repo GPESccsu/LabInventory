@@ -28,6 +28,8 @@ from backend.app.schemas import (
     StockOpDraftRequest,
     StockOpDraftResponse,
     ExecuteDraftRequest,
+    ResourceQARequest,
+    ResourceQAResponse,
     LocationListResponse,
     PartListResponse,
     ProjectAllocResponse,
@@ -341,6 +343,14 @@ def llm_execute_draft(req: ExecuteDraftRequest):
     from backend.app.llm_service import llm_service
 
     return llm_service.execute_draft(req.op, req.fields)
+
+
+@app.post("/api/llm/resource-qa", response_model=ResourceQAResponse)
+def llm_resource_qa(req: ResourceQARequest):
+    """项目资源问答：基于项目关联资源上下文回答问题。"""
+    from backend.app.llm_service import llm_service
+
+    return llm_service.resource_qa(req.project_code, req.question)
 
 
 def main() -> None:

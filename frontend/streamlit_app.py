@@ -678,6 +678,71 @@ def render_ai_tab() -> None:
     elif draft and not draft.get("op_name"):
         st.warning(draft.get("description", "无法识别为库存操作"))
 
+    # --- 项目资源问答 ---
+    st.divider()
+    st.subheader("项目资源问答")
+    st.caption("选择一个项目，基于其关联资源回答您的问题。")
+
+    # 获取项目列表
+    try:
+        proj_resp = api_get("/api/projects")
+        projects = proj_resp.json().get("items", []) if proj_resp.ok else []
+    except Exception:
+        projects = []
+
+    if not projects:
+        st.info("暂无项目，请先在「项目管理」标签页创建项目。")
+    else:
+        project_options = {f"{p['code']}（{p['name']}）": p["code"] for p in projects}
+        selected_label = st.selectbox(
+            "选择项目",
+            options=list(project_options.keys()),
+            key="rqa_project_select",
+        )
+        selected_code = project_options.get(selected_label, "")
+
+        rqa_question = st.text_input(
+            "请输入您的问题",
+            key="rqa_question_input",
+            placeholder="例如：这个项目有哪些资源？主板原理图在哪里？",
+        )
+
+        if st.button("提问", key="rqa_submit", type="primary"):
+            if not rqa_question:
+                st.warning("请输入问题")
+            elif not selected_code:
+                st.warning("请选择项目")
+            else:
+                with st.spinner("正在查询项目资源并生成回答..."):
+                    try:
+                        resp = api_post("/api/llm/resource-qa", json={
+                            "project_code": selected_code,
+                            "question": rqa_question,
+                        })
+                    except Exception as exc:
+                        st.error(f"请求失败：{exc}")
+                        resp = None
+
+                if resp and resp.ok:
+                    result = resp.json()
+                    answer = result.get("answer", "")
+                    sources = result.get("sources", [])
+                    has_ctx = result.get("has_sufficient_context", True)
+
+                    if has_ctx:
+                        st.success("回答基于项目资源")
+                    else:
+                        st.warning("依据可能不足")
+
+                    st.markdown(answer)
+
+                    if sources:
+                        st.markdown("**引用资源：**")
+                        for src in sources:
+                            st.markdown(f"- **{src['name']}**（{src['type']}）→ `{src['uri']}`")
+                elif resp:
+                    st.error(f"API 错误：{resp.text}")
+
     # 显示当前 LLM 配置
     st.divider()
     with st.expander("当前 LLM 配置"):
