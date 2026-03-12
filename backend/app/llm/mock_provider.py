@@ -6,31 +6,38 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date, timedelta
 from typing import Any
 
 from backend.app.llm.base import BaseLLMProvider
 from backend.app.llm.config import LLMConfig
 
 # 意图关键词映射（优先级从上到下）
+# 注意：顺序决定优先级。更具体的意图应排在前面。
 _INTENT_KEYWORDS: list[tuple[str, list[str]]] = [
     ("stock_in",        ["入库", "进货", "到货", "收货", "stock in", "stock-in"]),
-    ("stock_out",       ["出库", "领料", "领取", "发料", "stock out", "stock-out"]),
     ("stock_move",      ["移库", "转移", "移动", "搬", "move"]),
     ("stock_adjust",    ["调整", "盘点", "adjust"]),
     ("reserve",         ["预留", "预定", "reserve"]),
     ("release",         ["释放", "release"]),
     ("consume",         ["消耗", "consume"]),
-    ("query_stock",     ["库存", "还有多少", "剩余", "stock", "余量", "数量"]),
-    ("project_status",  ["项目状态", "物料状态", "BOM", "缺料", "project status"]),
-    ("query_ledger",    ["流水", "记录", "历史", "ledger", "日志"]),
-    ("query_parts",     ["元器件", "零件", "part", "物料信息", "参数"]),
+    ("project_status",  ["项目状态", "物料状态", "bom", "缺料", "缺哪些", "缺什么",
+                         "项目概况", "项目详情", "project status"]),
+    ("query_ledger",    ["流水", "台账", "记录", "历史", "ledger", "日志",
+                         "出库记录", "入库记录", "这个月", "本月", "最近", "上个月"]),
+    ("stock_out",       ["出库", "领料", "领取", "发料", "stock out", "stock-out"]),
+    ("query_stock",     ["库存", "还有多少", "剩余", "stock", "余量", "数量",
+                         "在哪", "哪些位置", "有货"]),
+    ("query_parts",     ["元器件", "零件", "part", "物料信息", "参数", "电阻",
+                         "电容", "芯片", "二极管", "三极管", "有哪些"]),
     ("help",            ["帮助", "你能做什么", "help", "功能"]),
 ]
 
 # 字段抽取正则
 _MPN_PATTERN = re.compile(
     r"(?:mpn|型号|料号)[：:\s]*([A-Za-z0-9\-_/.]+)"
-    r"|([A-Z][A-Za-z0-9]{2,}[\-][A-Za-z0-9\-/.]+)"   # 典型 MPN 格式
+    r"|([A-Z][A-Za-z0-9]{2,}[\-][A-Za-z0-9\-/.]+)"   # 带连字符 MPN
+    r"|([A-Z]{2,}[0-9][A-Za-z0-9]{3,})"               # 连续 MPN 如 STM32F103C8T6
 )
 _QTY_PATTERN = re.compile(
     r"(?:数量|qty|quantity|个数)[：:\s]*(\d+)"
@@ -44,6 +51,46 @@ _LOC_PATTERN = re.compile(
 _PROJECT_PATTERN = re.compile(
     r"(?:项目|project|proj)[：:\s]*([A-Za-z0-9\-_]+)"
 )
+
+
+def _extract_since(text: str) -> str:
+    """从自然语言中提取日期范围的起始日期（YYYY-MM-DD 格式）。"""
+    today = date.today()
+
+    # 精确日期：2024-01-15 或 2024/01/15
+    m = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", text)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+
+    # "这个月" / "本月"
+    if re.search(r"这个月|本月|当月", text):
+        return today.replace(day=1).isoformat()
+
+    # "上个月" / "上月"
+    if re.search(r"上个月|上月", text):
+        first_this_month = today.replace(day=1)
+        last_month = first_this_month - timedelta(days=1)
+        return last_month.replace(day=1).isoformat()
+
+    # "最近N天" / "近N天"
+    m = re.search(r"(?:最近|近)\s*(\d+)\s*天", text)
+    if m:
+        days = int(m.group(1))
+        return (today - timedelta(days=days)).isoformat()
+
+    # "今天"
+    if "今天" in text:
+        return today.isoformat()
+
+    # "昨天"
+    if "昨天" in text:
+        return (today - timedelta(days=1)).isoformat()
+
+    # "这周" / "本周"
+    if re.search(r"这周|本周|这个星期", text):
+        return (today - timedelta(days=today.weekday())).isoformat()
+
+    return ""
 
 
 class MockProvider(BaseLLMProvider):
@@ -82,7 +129,7 @@ class MockProvider(BaseLLMProvider):
         if "mpn" in field_schema:
             m = _MPN_PATTERN.search(text)
             if m:
-                result["mpn"] = m.group(1) or m.group(2)
+                result["mpn"] = m.group(1) or m.group(2) or m.group(3)
 
         if "qty" in field_schema:
             m = _QTY_PATTERN.search(text)
@@ -112,6 +159,11 @@ class MockProvider(BaseLLMProvider):
             m = _PROJECT_PATTERN.search(text)
             if m:
                 result["project_code"] = m.group(1)
+
+        if "since" in field_schema:
+            since = _extract_since(text)
+            if since:
+                result["since"] = since
 
         return result
 

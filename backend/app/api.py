@@ -23,6 +23,8 @@ from backend.app.schemas import (
     LLMParseRequest,
     LLMParseResponse,
     LLMPingResponse,
+    NLQueryRequest,
+    NLQueryResponse,
     LocationListResponse,
     PartListResponse,
     ProjectAllocResponse,
@@ -309,6 +311,17 @@ def llm_parse(req: LLMParseRequest):
         **result.to_dict(),
         "summary": summary,
     }
+
+
+@app.post("/api/llm/query", response_model=NLQueryResponse)
+def llm_query(req: NLQueryRequest):
+    """自然语言查询：解析意图 → 执行真实数据库查询 → 返回中文结果。
+
+    LLM 不编造数据，所有结果来自 SQLite 真实查询。
+    """
+    from backend.app.llm_service import llm_service
+
+    return llm_service.query(req.text)
 
 
 def main() -> None:

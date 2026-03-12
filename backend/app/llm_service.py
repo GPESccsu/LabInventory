@@ -5,15 +5,24 @@ Provider 切换完全通过环境变量完成，对业务层透明。
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from backend.app.llm import get_provider, parse_intent, reset_provider, summarize_result
 from backend.app.llm.config import LLMConfig
 from backend.app.llm.intent import ParsedIntent
+from backend.app.llm.query_executor import execute_query
 
 
 class LLMService:
     """业务层 LLM 服务封装。"""
+
+    def _get_service(self) -> Any:
+        """延迟获取 InventoryService 实例（避免循环导入）。"""
+        from backend.app.core import InventoryService
+
+        db_path = os.getenv("LABINV_DB", "./lab_inventory.db")
+        return InventoryService(db_path)
 
     def ping(self) -> dict[str, Any]:
         """检测当前 LLM provider 连通性。
@@ -48,6 +57,43 @@ class LLMService:
         """自然语言 → 结构化意图解析。"""
         provider = get_provider()
         return parse_intent(provider, text)
+
+    def query(self, text: str) -> dict[str, Any]:
+        """自然语言查询全流程：解析 → 执行 → 返回结果。
+
+        LLM 不编造数据。流程：
+        1. parse_intent: 自然语言 → 结构化意图 + 参数
+        2. execute_query: 调用 InventoryService 获取真实数据
+        3. 返回结构化结果（含中文 message）
+
+        Args:
+            text: 用户自然语言输入。
+
+        Returns:
+            {
+                "intent": str,
+                "params": dict,
+                "ok": bool,
+                "message": str,       # 中文回答
+                "data": list | dict,   # 原始查询数据
+                "confidence": str,
+            }
+        """
+        # 1. 解析意图
+        parsed = self.parse(text)
+
+        # 2. 执行真实查询
+        inv_service = self._get_service()
+        result = execute_query(inv_service, parsed)
+
+        return {
+            "intent": parsed.intent,
+            "params": parsed.params,
+            "ok": result["ok"],
+            "message": result["message"],
+            "data": result["data"],
+            "confidence": parsed.confidence,
+        }
 
     def summarize(self, intent: str, data: Any, instruction: str = "") -> str:
         """结构化数据 → 中文摘要。"""

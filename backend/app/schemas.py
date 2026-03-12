@@ -323,3 +323,16 @@ class LLMParseResponse(BaseModel):
     is_query: bool = False
     confidence: str = "mock"
     summary: str = ""
+
+
+class NLQueryRequest(BaseModel):
+    text: str
+
+
+class NLQueryResponse(BaseModel):
+    intent: str
+    params: dict = {}
+    ok: bool = True
+    message: str = ""
+    data: list | dict = []
+    confidence: str = "mock"

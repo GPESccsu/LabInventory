@@ -44,7 +44,7 @@ INTENT_FIELD_SCHEMAS: dict[str, dict[str, str]] = {
     Intent.CONSUME: {"alloc_id": "int"},
     Intent.QUERY_STOCK: {"mpn": "str", "location": "str"},
     Intent.QUERY_PARTS: {"mpn": "str"},
-    Intent.QUERY_LEDGER: {"project_code": "str", "mpn": "str"},
+    Intent.QUERY_LEDGER: {"project_code": "str", "mpn": "str", "since": "str"},
     Intent.PROJECT_STATUS: {"project_code": "str"},
     Intent.HELP: {},
     Intent.UNKNOWN: {},

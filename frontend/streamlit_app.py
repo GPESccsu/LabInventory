@@ -491,6 +491,88 @@ def render_locations_tab() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tab: 智能助手
+# ---------------------------------------------------------------------------
+def render_ai_tab() -> None:
+    st.subheader("智能助手")
+    st.caption("用自然语言查询库存、项目状态、出入库记录等。所有回答基于真实数据，不会编造。")
+
+    # 示例问题
+    examples = [
+        "STM32F103 还有多少库存？",
+        "项目 PROJ-001 缺哪些料？",
+        "这个月有哪些出库记录？",
+        "有哪些电阻？",
+        "帮助",
+    ]
+    st.markdown("**快捷示例：**")
+    cols = st.columns(len(examples))
+    for i, ex in enumerate(examples):
+        if cols[i].button(ex, key=f"ai_example_{i}"):
+            st.session_state["ai_input"] = ex
+
+    # 输入框
+    user_input = st.text_input(
+        "请输入您的问题",
+        value=st.session_state.get("ai_input", ""),
+        key="ai_query_input",
+        placeholder="例如：C409 里 10k 电阻还有多少？",
+    )
+
+    if st.button("查询", key="ai_submit", type="primary") or (user_input and user_input != st.session_state.get("_ai_last_query", "")):
+        if not user_input:
+            st.warning("请输入问题")
+            return
+
+        st.session_state["_ai_last_query"] = user_input
+        # 清空快捷输入
+        if "ai_input" in st.session_state:
+            del st.session_state["ai_input"]
+
+        with st.spinner("正在查询..."):
+            try:
+                resp = api_post("/api/llm/query", json={"text": user_input})
+            except Exception as exc:
+                st.error(f"请求失败：{exc}")
+                return
+
+        if not resp.ok:
+            st.error(f"API 错误：{resp.text}")
+            return
+
+        result = resp.json()
+        intent = result.get("intent", "unknown")
+        message = result.get("message", "")
+        data = result.get("data", [])
+        ok = result.get("ok", False)
+        confidence = result.get("confidence", "?")
+
+        # 显示解析信息
+        st.markdown(f"**识别意图：** `{intent}`　**置信度：** `{confidence}`")
+
+        # 显示回答
+        if ok:
+            st.success("查询成功")
+        else:
+            st.warning("查询未完成")
+        st.markdown(message)
+
+        # 如果有数据，显示表格
+        if data and isinstance(data, list) and len(data) > 0:
+            st.markdown("---")
+            st.markdown(f"**详细数据（共 {len(data)} 条）：**")
+            st.dataframe(data, use_container_width=True)
+
+    # 显示当前 LLM 配置
+    with st.expander("当前 LLM 配置"):
+        try:
+            cfg = api_get("/api/llm/config").json()
+            st.json(cfg)
+        except Exception:
+            st.warning("无法获取 LLM 配置")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
@@ -499,7 +581,8 @@ def main() -> None:
 
     render_sidebar()
 
-    tab_parts, tab_stock_ops, tab_project, tab_resources, tab_lcsc, tab_ledger, tab_xlsx, tab_locations = st.tabs([
+    tab_ai, tab_parts, tab_stock_ops, tab_project, tab_resources, tab_lcsc, tab_ledger, tab_xlsx, tab_locations = st.tabs([
+        "智能助手",
         "元件与库存",
         "出入库操作",
         "项目管理",
@@ -510,6 +593,8 @@ def main() -> None:
         "库位管理",
     ])
 
+    with tab_ai:
+        render_ai_tab()
     with tab_parts:
         render_parts_stock_tab()
     with tab_stock_ops:
